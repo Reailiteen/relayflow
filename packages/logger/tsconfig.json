@@ -1,9 +1,4 @@
 {
   "extends": "@relayflow/config/tsconfig/library.json",
-  "compilerOptions": {
-    // DOM is here only for the `console` type, which exists on every platform
-    // this package runs on but is not part of the ES lib.
-    "lib": ["ES2023", "DOM"]
-  },
   "include": ["src/**/*.ts"]
 }

@@ -24,7 +24,7 @@ const logger = createLogger({
 /** One store per app launch, so writes persist while you navigate. */
 const store = createStore();
 
-let actingAs = 'owner';
+let actingAs = 'candidate';
 
 /** Dev affordance: re-run the app as a different seeded user. */
 export function setActingAs(name: string) {

@@ -58,12 +58,27 @@ export function redact(value: unknown, depth = 0): unknown {
   return out;
 }
 
+/**
+ * Reached through globalThis rather than the bare `console` identifier.
+ *
+ * This package is compiled by whichever consumer imports it — Next, Metro,
+ * vitest — and they do not agree on whether the DOM lib is in scope. Going
+ * through globalThis keeps the logger free of any lib requirement at all.
+ */
+interface ConsoleLike {
+  log(message: string): void;
+  warn(message: string): void;
+  error(message: string): void;
+}
+
+const runtimeConsole = (globalThis as { console?: ConsoleLike }).console;
+
 export const consoleTransport: Transport = (record) => {
+  if (!runtimeConsole) return;
   const line = JSON.stringify({ level: record.level, msg: record.message, ...record.fields });
-  if (record.level === 'error') console.error(line);
-  else if (record.level === 'warn') console.warn(line);
-  // eslint-disable-next-line no-console -- the console transport is the point
-  else console.log(line);
+  if (record.level === 'error') runtimeConsole.error(line);
+  else if (record.level === 'warn') runtimeConsole.warn(line);
+  else runtimeConsole.log(line);
 };
 
 export interface LoggerOptions {

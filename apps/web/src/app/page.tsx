@@ -1,58 +1,89 @@
-import { can, isAuthenticated } from '@relayflow/access';
-import { listOrganizations } from '@relayflow/logic';
+import { can } from '@relayflow/access';
+import { getQstpDashboard } from '@relayflow/logic';
 import { getActor, getContext } from '@/server/context';
 
 /**
- * Placeholder shell — it exists to prove the wiring end to end, not to be the
- * product. Real screens land once we've agreed the UI direction.
- *
- * What it demonstrates: a Server Component resolving the caller through the
- * data access layer, calling a genuine use-case (which authorizes itself), and
- * gating an affordance on a capability rather than on a role string.
+ * A scaffold of the QSTP dashboard — enough to prove the operational numbers
+ * are genuinely derived, not enough to be the real screen. Proper layout lands
+ * once the visual direction is agreed.
  */
 export default async function HomePage() {
   const actor = await getActor();
   const ctx = await getContext();
-  const result = await listOrganizations(ctx, {});
+  const result = await getQstpDashboard(ctx, {});
+
+  if (!result.ok) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-16">
+        <p className="text-[var(--color-critical)]">{result.error.message}</p>
+      </main>
+    );
+  }
+
+  const { budget, attention, ...summary } = result.data;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col justify-center gap-6 px-6 py-16">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Relayflow</h1>
-        <p className="text-[var(--color-text-muted)]">
-          {isAuthenticated(actor)
-            ? `Acting as ${actor.email}`
-            : 'Signed out — no workspaces visible.'}
+    <main className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-12">
+      <header className="flex flex-col gap-1">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          {summary.cycleName} · {summary.stage}
         </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Operations</h1>
       </header>
 
-      {result.ok ? (
-        <ul className="flex flex-col gap-2">
-          {result.data.map((organization) => (
-            <li
-              key={organization.id}
-              className="flex items-center justify-between gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
-            >
-              <span className="min-w-0 truncate font-medium">{organization.name}</span>
-              {/* The button is capability-gated, not role-gated. Switch the dev
-                  actor and this appears or disappears accordingly. */}
-              {can(actor, { capability: 'member:invite', organizationId: organization.id }) && (
-                <span className="shrink-0 text-sm text-[var(--color-text-muted)]">
-                  can invite members
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-[var(--color-critical)]">{result.error.message}</p>
-      )}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {[
+          ['Funded hours', budget.funded],
+          ['Allocated', budget.allocated],
+          ['Unallocated', budget.unallocated],
+          ['Idle (allocated, unused)', budget.idle],
+          ['Reclaimable now', summary.reclaimableHours],
+          ['Onboarding', summary.candidatesOnboarding],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+          >
+            <div className="text-2xl font-semibold tabular-nums">{value}</div>
+            <div className="text-sm text-[var(--color-text-muted)]">{label}</div>
+          </div>
+        ))}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-medium">Needs attention</h2>
+        {attention.length === 0 ? (
+          <p className="text-[var(--color-text-muted)]">Nothing outstanding.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {attention.map((item, index) => (
+              <li
+                key={`${item.kind}-${index}`}
+                className="flex items-start justify-between gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+              >
+                <span>{item.summary}</span>
+                {/* Capability-gated, so an auditor sees the item but not the action. */}
+                {item.kind === 'hours_reclaimable' &&
+                  can(actor, { capability: 'redistribution:run' }) && (
+                    <span className="shrink-0 text-sm text-[var(--color-accent)]">
+                      redistribute
+                    </span>
+                  )}
+                {item.kind === 'exception_pending' &&
+                  can(actor, { capability: 'exception:decide' }) && (
+                    <span className="shrink-0 text-sm text-[var(--color-accent)]">review</span>
+                  )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <p className="text-sm text-[var(--color-text-muted)]">
-        Running on in-memory fixtures. Set the{' '}
-        <code className="rounded bg-[var(--color-surface)] px-1">relayflow_dev_actor</code> cookie
-        to <code>owner</code>, <code>admin</code>, <code>member</code>, <code>suspended</code> or{' '}
-        <code>anonymous</code> to see how the interface changes.
+        In-memory fixtures. Set <code>relayflow_dev_actor</code> to <code>manager</code>,{' '}
+        <code>operations</code>, <code>auditor</code>, <code>startupOwner</code>,{' '}
+        <code>supervisor</code>, <code>lateStartup</code>, <code>candidate</code> or{' '}
+        <code>anonymous</code>.
       </p>
     </main>
   );

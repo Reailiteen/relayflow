@@ -1,113 +1,327 @@
-import { conflict, ok, err, type Result } from '@relayflow/core';
+import { conflict, err, notFound, ok, type Result } from '@relayflow/core';
+import { blocksOthers, type Allocation, type Candidate, type CandidateDocument, type Cycle, type ExceptionRequest, type Interview, type PoolEntry, type Position, type Selection, type Startup, type StartupMember } from '@relayflow/entities';
 import type {
-  CreateOrganizationInput,
-  Membership,
-  Organization,
-  OrganizationId,
-  UserId,
-} from '@relayflow/entities';
-import type { MembershipPort, OrganizationPort, Repositories } from '@relayflow/ports';
-import { memberships as seedMemberships, organizations as seedOrganizations } from './seed';
+  AllocationPort,
+  CandidatePort,
+  CyclePort,
+  DocumentPort,
+  ExceptionPort,
+  InterviewPort,
+  PoolEntryWithCandidate,
+  PositionPort,
+  Repositories,
+  SelectionPort,
+  StartupPort,
+} from '@relayflow/ports';
+import * as seed from './seed';
 
 /**
  * In-memory adapter — the backend for UI development.
  *
- * It implements the same ports the Supabase adapter does, so screens built
- * against it are wired to the real use-cases and the real policy layer, not to
- * mock components. When the database arrives, apps swap one factory call and
- * nothing above it changes.
+ * It implements the same ports the Supabase adapter will, so screens built
+ * against it are wired to the real use-cases and the real policy layer. The
+ * only thing being faked is where the rows live.
  *
- * State is per-instance rather than module-global so a test or a request can
- * have its own copy without leaking into the next one.
+ * Where a port's contract demands an invariant, this honours it rather than
+ * papering over it. `selections.reserve` really does refuse a second claim, so
+ * the conflict path can be exercised in the UI today.
  */
 
 export interface FixtureStore {
-  organizations: Organization[];
-  memberships: Membership[];
+  cycles: Cycle[];
+  startups: Startup[];
+  startupMembers: StartupMember[];
+  allocations: Allocation[];
+  positions: Position[];
+  candidates: Candidate[];
+  poolEntries: PoolEntry[];
+  selections: Selection[];
+  exceptions: ExceptionRequest[];
+  interviews: Interview[];
+  documents: CandidateDocument[];
 }
 
+/** A fresh copy of the seed. Cloned so callers mutate their own state only. */
 export function createStore(): FixtureStore {
-  // Cloned: callers mutate through the repositories, never the seed arrays.
+  const clone = <T>(rows: readonly T[]): T[] => rows.map((row) => ({ ...row }));
   return {
-    organizations: seedOrganizations.map((o) => ({ ...o })),
-    memberships: seedMemberships.map((m) => ({ ...m })),
+    cycles: [{ ...seed.cycle }],
+    startups: clone(seed.startups),
+    startupMembers: clone(seed.startupMembers),
+    allocations: clone(seed.allocations),
+    positions: clone(seed.positions),
+    candidates: clone(seed.candidates),
+    poolEntries: clone(seed.poolEntries),
+    selections: clone(seed.selections),
+    exceptions: clone(seed.exceptions),
+    interviews: clone(seed.interviews),
+    documents: clone(seed.documents),
   };
 }
 
-function organizationPort(store: FixtureStore): OrganizationPort {
-  return {
-    findById: (id) => Promise.resolve(ok(store.organizations.find((o) => o.id === id) ?? null)),
+const uuid = () => crypto.randomUUID();
 
-    findBySlug: (slug) =>
-      Promise.resolve(ok(store.organizations.find((o) => o.slug === slug) ?? null)),
+export function createFixtureRepositories(store: FixtureStore = createStore()): Repositories {
+  const cycles: CyclePort = {
+    findById: (id) => Promise.resolve(ok(store.cycles.find((c) => c.id === id) ?? null)),
+    findActive: () =>
+      Promise.resolve(ok(store.cycles.find((c) => c.stage !== 'closed') ?? store.cycles[0] ?? null)),
+    list: () => Promise.resolve(ok([...store.cycles])),
+  };
 
+  const startups: StartupPort = {
+    findById: (id) => Promise.resolve(ok(store.startups.find((s) => s.id === id) ?? null)),
+    listForCycle: () =>
+      Promise.resolve(ok([...store.startups].sort((a, b) => a.name.localeCompare(b.name)))),
     listForUser: (userId) => {
-      // Mirrors what RLS enforces server-side: you see only your own workspaces.
       const mine = new Set(
-        store.memberships.filter((m) => m.userId === userId).map((m) => m.organizationId),
+        store.startupMembers.filter((m) => m.userId === userId).map((m) => m.startupId),
       );
-      return Promise.resolve(
-        ok(
-          store.organizations
-            .filter((o) => mine.has(o.id))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        ),
-      );
+      return Promise.resolve(ok(store.startups.filter((s) => mine.has(s.id))));
     },
+    listMembers: (startupId) =>
+      Promise.resolve(ok(store.startupMembers.filter((m) => m.startupId === startupId))),
+  };
 
-    createWithOwner: (input: CreateOrganizationInput, ownerId: UserId) => {
-      if (store.organizations.some((o) => o.slug === input.slug)) {
-        return Promise.resolve(err(conflict('That workspace address is already taken.')));
+  const allocations: AllocationPort = {
+    listForCycle: (cycleId) =>
+      Promise.resolve(ok(store.allocations.filter((a) => a.cycleId === cycleId))),
+
+    findForStartup: (cycleId, startupId) =>
+      Promise.resolve(
+        ok(
+          store.allocations.find((a) => a.cycleId === cycleId && a.startupId === startupId) ?? null,
+        ),
+      ),
+
+    decide: (input) => {
+      const existing = store.allocations.find(
+        (a) => a.cycleId === input.cycleId && a.startupId === input.startupId,
+      );
+
+      const next: Allocation = {
+        id: existing?.id ?? (uuid() as Allocation['id']),
+        cycleId: input.cycleId,
+        startupId: input.startupId,
+        weeklyHours: input.weeklyHours as Allocation['weeklyHours'],
+        status: 'confirmed',
+        score: input.score,
+        overrideReason: input.overrideReason,
+        justification: input.justification,
+        fromRedistribution: existing?.fromRedistribution ?? false,
+        decidedBy: input.decidedBy,
+        decidedAt: input.decidedAt,
+        createdAt: existing?.createdAt ?? input.decidedAt,
+        updatedAt: input.decidedAt,
+      };
+
+      if (existing) {
+        store.allocations[store.allocations.indexOf(existing)] = next;
+      } else {
+        store.allocations.push(next);
       }
+      return Promise.resolve(ok(next));
+    },
+  };
 
+  const positions: PositionPort = {
+    findById: (id) => Promise.resolve(ok(store.positions.find((p) => p.id === id) ?? null)),
+    listForCycle: (cycleId) =>
+      Promise.resolve(ok(store.positions.filter((p) => p.cycleId === cycleId))),
+    listForStartup: (cycleId, startupId) =>
+      Promise.resolve(
+        ok(store.positions.filter((p) => p.cycleId === cycleId && p.startupId === startupId)),
+      ),
+
+    create: (input) => {
       const now = new Date().toISOString();
-      const organization: Organization = {
-        id: `${crypto.randomUUID()}` as OrganizationId,
-        slug: input.slug,
-        name: input.name,
+      const position: Position = {
+        id: uuid() as Position['id'],
+        cycleId: input.cycleId,
+        startupId: input.startupId,
+        title: input.title,
+        description: input.description,
+        requiredSkills: input.requiredSkills,
+        internCount: input.internCount,
+        hoursPerIntern: input.hoursPerIntern,
+        durationWeeks: input.durationWeeks,
+        supervisorId: null,
+        supervisorName: input.supervisorName,
+        status: 'submitted',
+        reviewNote: null,
         createdAt: now,
         updatedAt: now,
       };
+      store.positions.push(position);
+      return Promise.resolve(ok(position));
+    },
 
-      // Atomic by construction: both pushes happen or neither does, because
-      // nothing between them can fail.
-      store.organizations.push(organization);
-      store.memberships.push({
-        id: crypto.randomUUID() as Membership['id'],
-        organizationId: organization.id,
-        userId: ownerId,
-        role: 'owner',
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      return Promise.resolve(ok(organization));
+    updateStatus: (id, status, reviewNote) => {
+      const position = store.positions.find((p) => p.id === id);
+      if (!position) return Promise.resolve(err(notFound('Position not found.')));
+      const next = { ...position, status, reviewNote, updatedAt: new Date().toISOString() };
+      store.positions[store.positions.indexOf(position)] = next;
+      return Promise.resolve(ok(next));
     },
   };
-}
 
-function membershipPort(store: FixtureStore): MembershipPort {
-  const list = (predicate: (m: Membership) => boolean): Promise<Result<Membership[]>> =>
-    Promise.resolve(ok(store.memberships.filter(predicate)));
+  const candidates: CandidatePort = {
+    findById: (id) => Promise.resolve(ok(store.candidates.find((c) => c.id === id) ?? null)),
+    listForCycle: (cycleId) =>
+      Promise.resolve(ok(store.candidates.filter((c) => c.cycleId === cycleId))),
 
-  return {
-    listForUser: (userId) => list((m) => m.userId === userId),
-    listForOrganization: (organizationId) => list((m) => m.organizationId === organizationId),
-    find: (organizationId, userId) =>
+    listPool: (positionId) => {
+      const rows: PoolEntryWithCandidate[] = [];
+      for (const entry of store.poolEntries.filter((e) => e.positionId === positionId)) {
+        const candidate = store.candidates.find((c) => c.id === entry.candidateId);
+        if (candidate) rows.push({ entry, candidate });
+      }
+      return Promise.resolve(ok(rows));
+    },
+
+    setAvailability: (id, availability, confirmedAt) => {
+      const candidate = store.candidates.find((c) => c.id === id);
+      if (!candidate) return Promise.resolve(err(notFound('Candidate not found.')));
+      const next = {
+        ...candidate,
+        availability,
+        availabilityConfirmedAt: confirmedAt,
+        updatedAt: confirmedAt,
+      };
+      store.candidates[store.candidates.indexOf(candidate)] = next;
+      return Promise.resolve(ok(next));
+    },
+  };
+
+  const selections: SelectionPort = {
+    listForCandidate: (candidateId) =>
+      Promise.resolve(ok(store.selections.filter((s) => s.candidateId === candidateId))),
+
+    listForCycle: () => Promise.resolve(ok([...store.selections])),
+
+    reserve: (input) => {
+      // The port's contract: refuse a second active claim. Enforced here so the
+      // conflict path is reachable from the UI without a database.
+      const held = store.selections.find(
+        (s) => s.candidateId === input.candidateId && blocksOthers(s.status),
+      );
+      if (held) {
+        return Promise.resolve(
+          err(
+            conflict('That candidate has already been reserved by another startup.', {
+              context: { candidateId: input.candidateId, heldBy: held.startupId },
+            }),
+          ),
+        );
+      }
+
+      const selection: Selection = {
+        id: uuid() as Selection['id'],
+        positionId: input.positionId,
+        startupId: input.startupId,
+        candidateId: input.candidateId,
+        status: 'reserved',
+        reservedAt: input.reservedAt,
+        confirmedAt: null,
+        releasedAt: null,
+        selectedBy: input.selectedBy,
+        overrideReason: null,
+        overriddenBy: null,
+        createdAt: input.reservedAt,
+        updatedAt: input.reservedAt,
+      };
+      store.selections.push(selection);
+      return Promise.resolve(ok(selection));
+    },
+
+    release: (selectionId, releasedAt) => {
+      const selection = store.selections.find((s) => s.id === selectionId);
+      if (!selection) return Promise.resolve(err(notFound('Selection not found.')));
+      const next: Selection = {
+        ...selection,
+        status: 'released',
+        releasedAt,
+        updatedAt: releasedAt,
+      };
+      store.selections[store.selections.indexOf(selection)] = next;
+      return Promise.resolve(ok(next));
+    },
+  };
+
+  const exceptions: ExceptionPort = {
+    listForCycle: (cycleId) =>
+      Promise.resolve(ok(store.exceptions.filter((e) => e.cycleId === cycleId))),
+
+    listForStartup: (cycleId, startupId) =>
       Promise.resolve(
-        ok(
-          store.memberships.find(
-            (m) => m.organizationId === organizationId && m.userId === userId,
-          ) ?? null,
-        ),
+        ok(store.exceptions.filter((e) => e.cycleId === cycleId && e.startupId === startupId)),
       ),
+
+    request: (input) => {
+      const now = new Date().toISOString();
+      const request: ExceptionRequest = {
+        id: uuid() as ExceptionRequest['id'],
+        cycleId: input.cycleId,
+        startupId: input.startupId,
+        kind: input.kind,
+        status: 'pending',
+        reason: input.reason,
+        requestedDeadline: input.requestedDeadline,
+        grantedDeadline: null,
+        decisionNote: null,
+        requestedBy: input.requestedBy,
+        decidedBy: null,
+        decidedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.exceptions.push(request);
+      return Promise.resolve(ok(request));
+    },
+
+    decide: (input) => {
+      const request = store.exceptions.find((e) => e.id === input.exceptionId);
+      if (!request) return Promise.resolve(err(notFound('Exception request not found.')));
+      const next: ExceptionRequest = {
+        ...request,
+        status: input.decision,
+        grantedDeadline: input.grantedDeadline,
+        decisionNote: input.decisionNote,
+        decidedBy: input.decidedBy,
+        decidedAt: input.decidedAt,
+        updatedAt: input.decidedAt,
+      };
+      store.exceptions[store.exceptions.indexOf(request)] = next;
+      return Promise.resolve(ok(next));
+    },
+  };
+
+  const interviews: InterviewPort = {
+    listForPosition: (positionId) =>
+      Promise.resolve(ok(store.interviews.filter((i) => i.positionId === positionId))),
+    listForCandidate: (candidateId) =>
+      Promise.resolve(ok(store.interviews.filter((i) => i.candidateId === candidateId))),
+  };
+
+  const documents: DocumentPort = {
+    listForCandidate: (candidateId) =>
+      Promise.resolve(ok(store.documents.filter((d) => d.candidateId === candidateId))),
+    listAwaitingVerification: () =>
+      Promise.resolve(ok(store.documents.filter((d) => d.status === 'submitted'))),
+  };
+
+  return {
+    cycles,
+    startups,
+    allocations,
+    positions,
+    candidates,
+    selections,
+    exceptions,
+    interviews,
+    documents,
   };
 }
 
-export function createFixtureRepositories(store: FixtureStore = createStore()): Repositories {
-  return {
-    organizations: organizationPort(store),
-    memberships: membershipPort(store),
-  };
-}
+/** Re-exported so callers can assert against known ids in dev and tests. */
+export type { Result };
