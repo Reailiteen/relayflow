@@ -1,0 +1,41 @@
+{
+  "name": "@relayflow/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./web": "./src/web/index.ts",
+    "./native": "./src/native/index.ts",
+    "./admin": "./src/admin/index.ts",
+    "./types": "./src/generated/database.types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "generate:types": "supabase gen types typescript --local --schema public > src/generated/database.types.ts",
+    "clean": "rm -rf .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@relayflow/core": "workspace:*",
+    "@relayflow/entities": "workspace:*",
+    "@relayflow/logger": "workspace:*",
+    "@supabase/supabase-js": "catalog:"
+  },
+  "peerDependencies": {
+    "@supabase/ssr": "^0.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@supabase/ssr": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@relayflow/config": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

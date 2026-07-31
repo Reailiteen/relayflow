@@ -1,0 +1,28 @@
+{
+  "name": "relayflow",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@relayflow/web",
+    "dev:mobile": "turbo run dev --filter=@relayflow/mobile",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "verify": "turbo run typecheck lint test build",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml,sql}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml,sql}\"",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@relayflow/config": "workspace:*",
+    "prettier": "catalog:",
+    "turbo": "^2.5.8",
+    "typescript": "catalog:"
+  }
+}

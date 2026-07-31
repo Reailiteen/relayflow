@@ -1,0 +1,37 @@
+/**
+ * Web-side mirror of src/index.ts, wired into Tailwind v4's @theme.
+ * Keep the values in sync with the TypeScript source — the native app reads
+ * that one, and a divergence here is how the two apps stop looking alike.
+ */
+
+@theme {
+  --color-bg: oklch(1 0 0);
+  --color-surface: oklch(0.985 0.002 250);
+  --color-surface-raised: oklch(1 0 0);
+  --color-border: oklch(0.925 0.005 250);
+  --color-text: oklch(0.21 0.009 250);
+  --color-text-muted: oklch(0.44 0.012 250);
+  --color-accent: oklch(0.62 0.18 255);
+  --color-accent-text: oklch(1 0 0);
+  --color-positive: oklch(0.65 0.16 150);
+  --color-caution: oklch(0.78 0.15 85);
+  --color-critical: oklch(0.58 0.2 27);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-bg: oklch(0.145 0.008 250);
+    --color-surface: oklch(0.21 0.009 250);
+    --color-surface-raised: oklch(0.27 0.01 250);
+    --color-border: oklch(0.27 0.01 250);
+    --color-text: oklch(0.985 0.002 250);
+    --color-text-muted: oklch(0.708 0.01 250);
+    --color-accent: oklch(0.78 0.12 255);
+    --color-accent-text: oklch(0.145 0.008 250);
+  }
+}

@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Typecheck and lint run without a real project; the build step below sets
+  # real values. Without this the env parser would fail the job at import time.
+  SKIP_ENV_VALIDATION: '1'
+  TURBO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  verify:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Formatting
+        run: pnpm format:check
+
+      # One command, four gates, all of them blocking. The audit found a quality
+      # gate that could pass while the build was broken; nothing here is
+      # allowed to continue-on-error.
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Lint
+        run: pnpm turbo run lint
+
+      - name: Test
+        run: pnpm turbo run test
+
+      - name: Build
+        run: pnpm turbo run build
+        env:
+          # Bundling only — these are never the values a deployment runs with.
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key-for-build-only
+          EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key-for-build-only
+
+  database:
+    name: migrations · RLS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Applying every migration to an empty database catches ordering mistakes
+      # and syntax errors that only surface on a fresh environment.
+      - name: Apply migrations
+        run: supabase db start
+
+      # Schema drift between the database and the generated types is a runtime
+      # parse failure waiting to happen. Fail here instead.
+      - name: Check generated types are current
+        run: |
+          supabase gen types typescript --local --schema public \
+            > /tmp/database.types.ts
+          if ! diff -q /tmp/database.types.ts \
+               packages/data/src/generated/database.types.ts > /dev/null; then
+            echo "::error::Generated database types are out of date."
+            echo "Run: pnpm --filter @relayflow/data generate:types"
+            diff /tmp/database.types.ts \
+                 packages/data/src/generated/database.types.ts || true
+            exit 1
+          fi

@@ -1,0 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Single source of truth for versions shared across the monorepo.
+# Packages reference these with "catalog:" instead of a literal range,
+# so web and mobile can never drift onto different majors of the same lib.
+catalog:
+  typescript: ^5.9.3
+  zod: ^4.1.12
+  "@supabase/supabase-js": ^2.58.0
+  "@tanstack/react-query": ^5.90.2
+  eslint: ^9.38.0
+  prettier: ^3.6.2
+  vitest: ^3.2.4
+
+# Expo/Metro and Next both resolve better with a hoisted layout.
+# See .npmrc — node-linker=hoisted is deliberate, not accidental.
