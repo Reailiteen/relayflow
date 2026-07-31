@@ -22,6 +22,7 @@
     "@relayflow/core": "workspace:*",
     "@relayflow/entities": "workspace:*",
     "@relayflow/logger": "workspace:*",
+    "@relayflow/ports": "workspace:*",
     "@supabase/supabase-js": "catalog:"
   },
   "peerDependencies": {

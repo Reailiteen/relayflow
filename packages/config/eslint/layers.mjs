@@ -6,28 +6,43 @@
  * is the machine-checked version of docs/ARCHITECTURE.md — if the two ever
  * disagree, this file wins, because CI runs it.
  *
- *   apps            (web, mobile)
+ *   apps            (web, mobile)  — choose an adapter, wire it in
  *     └─> logic     use-cases: authorize, then orchestrate
  *           ├─> access    pure policy decisions
- *           └─> data      repositories (the ONLY Supabase caller)
+ *           └─> ports     storage interfaces — NOT an implementation
  *                 └─> entities   schemas + domain types
  *                       └─> core, logger, tokens
+ *
+ *   Adapters implement `ports` and sit beside logic, never beneath it:
+ *     data      Supabase/PostgREST (the ONLY Supabase caller)
+ *     fixtures  in-memory, what UI development runs against
+ *
+ *   Crucially, `logic` may not import either adapter. Use-cases depend on the
+ *   interface only, which is what lets the product be built now against
+ *   fixtures and moved onto a database later without touching business rules.
  *
  *   ui-web / ui-native sit beside logic and may only reach entities/tokens/core.
  *   Presentation never talks to a database.
  */
 
 /** @type {Record<string, string[]>} layer -> layers it may NOT import */
+const ADAPTERS_AND_UP = ['data', 'fixtures', 'logic', 'ui-web', 'ui-native'];
+
 const FORBIDDEN = {
-  core: ['entities', 'access', 'data', 'logic', 'ui-web', 'ui-native'],
-  logger: ['entities', 'access', 'data', 'logic', 'ui-web', 'ui-native'],
-  tokens: ['entities', 'access', 'data', 'logic', 'ui-web', 'ui-native'],
-  entities: ['access', 'data', 'logic', 'ui-web', 'ui-native'],
-  access: ['data', 'logic', 'ui-web', 'ui-native'],
-  data: ['logic', 'ui-web', 'ui-native'],
-  logic: ['ui-web', 'ui-native'],
-  'ui-web': ['data', 'logic', 'ui-native'],
-  'ui-native': ['data', 'logic', 'ui-web'],
+  core: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  logger: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  tokens: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  entities: ['ports', 'access', ...ADAPTERS_AND_UP],
+  ports: ['access', ...ADAPTERS_AND_UP],
+  access: ['ports', ...ADAPTERS_AND_UP],
+  // Adapters implement ports. They must not know about each other, and must not
+  // reach up into the use-cases that consume them.
+  data: ['fixtures', 'logic', 'ui-web', 'ui-native'],
+  fixtures: ['data', 'logic', 'ui-web', 'ui-native'],
+  // The important one: logic talks to ports, never to a concrete adapter.
+  logic: ['data', 'fixtures', 'ui-web', 'ui-native'],
+  'ui-web': ['data', 'fixtures', 'logic', 'ui-native'],
+  'ui-native': ['data', 'fixtures', 'logic', 'ui-web'],
 };
 
 const reason = (self, target) =>

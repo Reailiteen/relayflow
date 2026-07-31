@@ -7,11 +7,12 @@ policy, and one set of design tokens.
 
 ```bash
 pnpm install
-cp .env.example .env        # fill in your Supabase project values
-
 pnpm dev:web                # http://localhost:3000
 pnpm dev:mobile             # Expo dev server
 ```
+
+No environment variables, no database, no accounts. The apps run on seeded
+in-memory fixtures until we wire a backend.
 
 Before pushing:
 
@@ -30,12 +31,14 @@ packages/
   logger/     structured logging, redaction on by default
   tokens/     design tokens shared by web CSS and native styles
   entities/   Zod schemas, domain types, row → domain mapping
+  ports/      storage interfaces — what the app needs, not who provides it
   access/     capabilities, actor, pure policy decisions
-  data/       repositories · RPC wrapper · quarantined admin client
+  fixtures/   in-memory adapter, seed data, dev actors   ← what runs today
+  data/       Supabase adapter · quarantined admin client ← written, not wired
   logic/      use-cases: parse → authorize → execute
   config/     tsconfig, ESLint, and the layer rules themselves
 supabase/
-  migrations/ schema, RLS policies, transactional RPCs
+  migrations/ schema, RLS policies, transactional RPCs (spec for later)
 docs/
   ARCHITECTURE.md   the boundaries and why each one exists
 ```
@@ -47,17 +50,31 @@ discipline. `docs/ARCHITECTURE.md` explains the reasoning; the short version:
 
 1. **Dependencies point one way.** A package imports only from layers below it.
    Checked by `packages/config/eslint/layers.mjs` on every `pnpm lint`.
-2. **Only `@relayflow/data` touches Supabase.** The service-role client, which
-   bypasses RLS, lives behind a subpath apps and use-cases cannot import.
+2. **Use-cases depend on interfaces, never on a database.** `@relayflow/logic`
+   cannot import either adapter — lint rejects it — so it cannot tell whether it
+   is talking to Postgres or to an array. Only `@relayflow/data` touches
+   Supabase, and the RLS-bypassing service-role client lives behind a subpath
+   apps and use-cases cannot import.
 3. **Authorization is a required field.** `defineUseCase` will not typecheck
    without an `authorize` rule, and the framework — not the author — fixes the
    order: parse, authorize, execute.
-4. **Multi-table writes are transactions.** More than one table means a Postgres
-   function invoked through `callRpc`, never a sequence of PostgREST calls.
+4. **Multi-table writes are atomic.** The port exposes them as one method whose
+   contract requires it; the Supabase adapter uses a transaction, and no
+   use-case sequences the writes itself.
 
-Application policy and row-level security both enforce the tenant boundary, on
-purpose: policy gives good errors and drives the UI, RLS holds even when a query
-is written carelessly.
+## Working without a backend
+
+Screens call the real use-cases, which run the real policy checks against real
+domain types. Only storage is a stand-in, so the parts most expensive to get
+wrong are exercised from the first screen.
+
+Switch who you are signed in as to check that the UI genuinely respects
+capabilities — set the `relayflow_dev_actor` cookie to `owner`, `admin`,
+`member`, `suspended` or `anonymous`. If the interface looks identical for all
+five, the permission wiring is not real yet.
+
+Wiring Supabase later is a change to two files: `apps/web/src/server/context.ts`
+and `apps/mobile/src/session.ts`, both marked with the lines to replace.
 
 ## Internal packages have no build step
 

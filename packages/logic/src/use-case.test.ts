@@ -22,7 +22,6 @@ function contextFor(who: UseCaseContext['actor']): UseCaseContext {
     repos: {} as UseCaseContext['repos'],
     logger: silentLogger,
     clock: fixedClock('2026-01-01T00:00:00Z'),
-    client: {} as UseCaseContext['client'],
   };
 }
 

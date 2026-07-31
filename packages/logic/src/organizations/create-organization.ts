@@ -1,16 +1,16 @@
-import { ok } from '@relayflow/core';
-import { createOrganizationInput, organizationEntity } from '@relayflow/entities';
-import { callRpc } from '@relayflow/data';
+import { createOrganizationInput } from '@relayflow/entities';
 import { AUTHENTICATED, defineUseCase, requireActor } from '../use-case';
 
 /**
- * Creating an organization writes two rows — the organization and the owner's
- * membership. Doing that as two PostgREST calls is exactly the non-atomic
- * pattern the audit flagged: if the second write fails, you are left with an
- * organization nobody can administer, and no way to notice.
+ * Creating an organization writes two records — the organization and the
+ * owner's membership — and a half-completed version of that leaves a workspace
+ * nobody can administer.
  *
- * So it is one SQL function in one transaction, running as the caller.
- * See supabase/migrations/0002_rpc_create_organization_with_owner.sql.
+ * The use-case does not orchestrate those two writes itself; it calls a single
+ * port method whose contract requires atomicity. That way the guarantee lives
+ * with whoever can actually provide it (a SQL transaction, in the Supabase
+ * adapter) instead of being attempted from up here, which is the non-atomic
+ * pattern the audit flagged.
  */
 export const createOrganization = defineUseCase({
   name: 'organizations.create',
@@ -24,12 +24,7 @@ export const createOrganization = defineUseCase({
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
 
-    const created = await callRpc(
-      ctx.client,
-      'create_organization_with_owner',
-      { p_name: input.name, p_slug: input.slug },
-      organizationEntity.parse,
-    );
+    const created = await ctx.repos.organizations.createWithOwner(input, actor.data.userId);
     if (!created.ok) return created;
 
     ctx.logger.info('organization created', {
@@ -37,6 +32,6 @@ export const createOrganization = defineUseCase({
       ownerId: actor.data.userId,
     });
 
-    return ok(created.data);
+    return created;
   },
 });

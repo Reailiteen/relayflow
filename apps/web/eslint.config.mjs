@@ -23,10 +23,10 @@ export default [
             {
               // Apps orchestrate; they do not query. A page that reaches for a
               // repository is a page that will grow its own ad-hoc policy.
-              group: ['@relayflow/data', '@relayflow/data/!(web)'],
+              group: ['@relayflow/data', '@relayflow/data/*', '@relayflow/fixtures'],
               message:
                 'Call a use-case from @relayflow/logic instead of querying directly. ' +
-                'Only src/server/context.ts may build a client, via @relayflow/data/web.',
+                'Only src/server/context.ts chooses a storage adapter.',
             },
           ],
         },
@@ -34,9 +34,9 @@ export default [
     },
   },
   {
-    // The one file allowed to construct a client and import the SDK: session
-    // refresh has to run before any application code does.
-    files: ['src/server/context.ts', 'src/proxy.ts'],
+    // The one file that picks an adapter and resolves identity. Keeping the
+    // exception this narrow is what makes the swap to Supabase a one-file change.
+    files: ['src/server/context.ts'],
     rules: { 'no-restricted-imports': 'off' },
   },
 ];

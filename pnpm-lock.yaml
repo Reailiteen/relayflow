@@ -44,27 +44,27 @@ importers:
 
   apps/mobile:
     dependencies:
-      '@react-native-async-storage/async-storage':
-        specifier: 2.2.0
-        version: 2.2.0(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))
       '@relayflow/access':
         specifier: workspace:*
         version: link:../../packages/access
       '@relayflow/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@relayflow/data':
-        specifier: workspace:*
-        version: link:../../packages/data
       '@relayflow/entities':
         specifier: workspace:*
         version: link:../../packages/entities
+      '@relayflow/fixtures':
+        specifier: workspace:*
+        version: link:../../packages/fixtures
       '@relayflow/logger':
         specifier: workspace:*
         version: link:../../packages/logger
       '@relayflow/logic':
         specifier: workspace:*
         version: link:../../packages/logic
+      '@relayflow/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
       '@relayflow/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -120,24 +120,24 @@ importers:
       '@relayflow/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@relayflow/data':
-        specifier: workspace:*
-        version: link:../../packages/data
       '@relayflow/entities':
         specifier: workspace:*
         version: link:../../packages/entities
+      '@relayflow/fixtures':
+        specifier: workspace:*
+        version: link:../../packages/fixtures
       '@relayflow/logger':
         specifier: workspace:*
         version: link:../../packages/logger
       '@relayflow/logic':
         specifier: workspace:*
         version: link:../../packages/logic
+      '@relayflow/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
       '@relayflow/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
-      '@supabase/ssr':
-        specifier: ^0.8.0
-        version: 0.8.0(@supabase/supabase-js@2.111.0)
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -250,6 +250,9 @@ importers:
       '@relayflow/logger':
         specifier: workspace:*
         version: link:../logger
+      '@relayflow/ports':
+        specifier: workspace:*
+        version: link:../ports
       '@supabase/ssr':
         specifier: ^0.8.0
         version: 0.8.0(@supabase/supabase-js@2.111.0)
@@ -292,6 +295,34 @@ importers:
         specifier: 'catalog:'
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
 
+  packages/fixtures:
+    dependencies:
+      '@relayflow/access':
+        specifier: workspace:*
+        version: link:../access
+      '@relayflow/core':
+        specifier: workspace:*
+        version: link:../core
+      '@relayflow/entities':
+        specifier: workspace:*
+        version: link:../entities
+      '@relayflow/ports':
+        specifier: workspace:*
+        version: link:../ports
+    devDependencies:
+      '@relayflow/config':
+        specifier: workspace:*
+        version: link:../config
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
   packages/logger:
     devDependencies:
       '@relayflow/config':
@@ -315,18 +346,43 @@ importers:
       '@relayflow/core':
         specifier: workspace:*
         version: link:../core
-      '@relayflow/data':
-        specifier: workspace:*
-        version: link:../data
       '@relayflow/entities':
         specifier: workspace:*
         version: link:../entities
       '@relayflow/logger':
         specifier: workspace:*
         version: link:../logger
+      '@relayflow/ports':
+        specifier: workspace:*
+        version: link:../ports
       zod:
         specifier: 'catalog:'
         version: 4.4.3
+    devDependencies:
+      '@relayflow/config':
+        specifier: workspace:*
+        version: link:../config
+      '@relayflow/fixtures':
+        specifier: workspace:*
+        version: link:../fixtures
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
+  packages/ports:
+    dependencies:
+      '@relayflow/core':
+        specifier: workspace:*
+        version: link:../core
+      '@relayflow/entities':
+        specifier: workspace:*
+        version: link:../entities
     devDependencies:
       '@relayflow/config':
         specifier: workspace:*
@@ -1624,11 +1680,6 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
-
-  '@react-native-async-storage/async-storage@2.2.0':
-    resolution: {integrity: sha512-gvRvjR5JAaUZF8tv2Kcq/Gbt3JHwbKFYfmb445rhOj6NUMx3qPLixmDx5pZAyb9at1bYvJ4/eTUipU5aki45xw==}
-    peerDependencies:
-      react-native: ^0.0.0-0 || >=0.65 <1.0
 
   '@react-native-masked-view/masked-view@0.3.2':
     resolution: {integrity: sha512-XwuQoW7/GEgWRMovOQtX3A4PrXhyaZm0lVUiY8qJDvdngjLms9Cpdck6SmGAUNqQwcj2EadHC1HwL0bEyoa/SQ==}
@@ -3473,10 +3524,6 @@ packages:
     resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}
     engines: {node: '>=0.12.0'}
 
-  is-plain-obj@2.1.0:
-    resolution: {integrity: sha512-YWnfyRwxL/+SsrWYfOpUtz5b3YD+nyfkHvjbcanzk8zgyO4ASD67uVMRt8k5bM4lLMDnXfriRhOpemw+NfT1eA==}
-    engines: {node: '>=8'}
-
   is-regex@1.2.1:
     resolution: {integrity: sha512-MjYsKHO5O7mCsmRGxWcLWheFqN9DJ/2TmngvjKXihe6efViPqc274+Fx/4fYj/r03+ESvBdTXK0V6tA3rgez1g==}
     engines: {node: '>= 0.4'}
@@ -3812,10 +3859,6 @@ packages:
 
   memoize-one@5.2.1:
     resolution: {integrity: sha512-zYiwtZUcYyXKo/np96AGZAckk+FWWsUdJ3cHGGmld7+AhvcWmQyGCYUh1hc4Q/pkOhb65dQR/pqCyK0cOaHz4Q==}
-
-  merge-options@3.0.4:
-    resolution: {integrity: sha512-2Sug1+knBjkaMsMgf1ctR1Ujx+Ayku4EdJN4Z+C2+JzoeF7A3OZ9KM2GY0CpQS51NR61LTurMJrRKPhSs3ZRTQ==}
-    engines: {node: '>=10'}
 
   merge-stream@2.0.0:
     resolution: {integrity: sha512-abv/qOcuPfk3URPfDzmZU1LKmuw8kT+0nIHvKrKgFrwifol/doWcdA4ZqsWQ8ENrFKkd67Mfpo/LovbIUsbt3w==}
@@ -6491,11 +6534,6 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
 
-  '@react-native-async-storage/async-storage@2.2.0(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))':
-    dependencies:
-      merge-options: 3.0.4
-      react-native: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)
-
   '@react-native-masked-view/masked-view@0.3.2(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
     dependencies:
       react: 19.2.3
@@ -6625,9 +6663,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.2': {}
 
@@ -8583,8 +8619,6 @@ snapshots:
 
   is-number@7.0.0: {}
 
-  is-plain-obj@2.1.0: {}
-
   is-regex@1.2.1:
     dependencies:
       call-bound: 1.0.4
@@ -8872,10 +8906,6 @@ snapshots:
   math-intrinsics@1.1.0: {}
 
   memoize-one@5.2.1: {}
-
-  merge-options@3.0.4:
-    dependencies:
-      is-plain-obj: 2.1.0
 
   merge-stream@2.0.0: {}
 

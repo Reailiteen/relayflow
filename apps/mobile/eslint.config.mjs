@@ -15,10 +15,10 @@ export default [
           patterns: [
             ...universalImportRules,
             {
-              group: ['@relayflow/data', '@relayflow/data/!(native)'],
+              group: ['@relayflow/data', '@relayflow/data/*', '@relayflow/fixtures'],
               message:
                 'Call a use-case from @relayflow/logic instead of querying directly. ' +
-                'Only src/session.ts may build a client, via @relayflow/data/native.',
+                'Only src/session.ts chooses a storage adapter.',
             },
           ],
         },

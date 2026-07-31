@@ -4,15 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # Typecheck and lint run without a real project; the build step below sets
-  # real values. Without this the env parser would fail the job at import time.
-  SKIP_ENV_VALIDATION: '1'
   TURBO_TELEMETRY_DISABLED: '1'
 
 jobs:
@@ -47,17 +45,18 @@ jobs:
       - name: Test
         run: pnpm turbo run test
 
+      # No environment needed: the apps run on in-memory fixtures until the
+      # backend is wired. If this step ever starts needing secrets, that is the
+      # signal that something has reached for a database it should not have.
       - name: Build
         run: pnpm turbo run build
-        env:
-          # Bundling only — these are never the values a deployment runs with.
-          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key-for-build-only
-          EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key-for-build-only
 
   database:
     name: migrations · RLS
+    # Deferred: the schema and policies are written and kept in the repo, but
+    # nothing runs against them yet. Flip this to `pull_request` (and drop the
+    # `if`) on the commit that wires Supabase up.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

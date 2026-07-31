@@ -2,76 +2,55 @@ import 'server-only';
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { systemClock } from '@relayflow/core';
-import { ANONYMOUS, type Actor, type MaybeActor } from '@relayflow/access';
-import { createRepositories, type RlsClient } from '@relayflow/data';
-import { createWebServerClient } from '@relayflow/data/web';
+import type { MaybeActor } from '@relayflow/access';
+import { createFixtureRepositories, createStore, devActor } from '@relayflow/fixtures';
 import { createLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '@relayflow/logic';
-import type { OrganizationId, UserId } from '@relayflow/entities';
-import { env } from '@/env';
 
 /**
  * The data access layer.
  *
- * Next.js docs are explicit that Server Actions are reachable by direct POST,
- * so every one of them must verify the caller itself. This module is the only
- * place the app derives identity, and `getActor()` is memoized per request so
- * that doing it correctly costs one round trip rather than one per call site.
+ * Identity is derived in exactly one place, and `getActor()` is memoized per
+ * request so that doing it correctly costs one resolution rather than one per
+ * call site. Nothing here trusts a client-supplied user or organization id.
  *
- * Nothing here trusts a client-supplied user or organization id.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CURRENTLY RUNNING ON FIXTURES. There is no database and no auth yet: the
+ * actor comes from a cookie you can set from the dev toolbar, and the
+ * repositories are in-memory.
+ *
+ * That is a deliberate, temporary state, and it is confined to this file.
+ * Everything above it — use-cases, policy, entities — is already the real
+ * implementation. Wiring Supabase later means replacing the two marked lines
+ * below with a session lookup and `createRepositories(client)`; no use-case,
+ * no policy rule, and no screen changes.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
-export const getSupabase = cache(async (): Promise<RlsClient> => {
-  const cookieStore = await cookies();
-  return createWebServerClient(
-    env.NEXT_PUBLIC_SUPABASE_URL,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    cookieStore,
-  );
+/** Dev-only: which seeded user this session is acting as. */
+export const DEV_ACTOR_COOKIE = 'relayflow_dev_actor';
+
+export const getActor = cache(async (): Promise<MaybeActor> => {
+  // ⟵ REPLACE WITH: verified session lookup (supabase.auth.getUser()).
+  const store = await cookies();
+  return devActor(store.get(DEV_ACTOR_COOKIE)?.value);
 });
 
 /**
- * Resolves the caller from the verified JWT, then loads their memberships.
- *
- * `getUser()` rather than `getSession()`: the former revalidates the token with
- * the auth server, the latter returns whatever is in the cookie. On the server
- * that difference is the whole security boundary.
+ * One store for the whole server process, so a workspace created in one request
+ * is still there in the next. Restarting the dev server resets it — which is
+ * the honest behaviour for something that is explicitly not a database.
  */
-export const getActor = cache(async (): Promise<MaybeActor> => {
-  const supabase = await getSupabase();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return ANONYMOUS;
+const devStore = createStore();
 
-  const { data: rows } = await supabase
-    .from('memberships')
-    .select('organization_id, role, status')
-    .eq('user_id', data.user.id);
-
-  const actor: Actor = {
-    userId: data.user.id as UserId,
-    email: data.user.email ?? '',
-    memberships: (rows ?? []).map((row) => ({
-      organizationId: row.organization_id as OrganizationId,
-      role: row.role,
-      status: row.status,
-    })),
-  };
-
-  return actor;
-});
-
-/** Assembles the context every use-case runs against. */
 export const getContext = cache(async (): Promise<UseCaseContext> => {
-  const client = await getSupabase();
-  const actor = await getActor();
-
   return {
-    actor,
-    client,
-    repos: createRepositories(client),
+    actor: await getActor(),
+    // ⟵ REPLACE WITH: createRepositories(rlsBoundClient).
+    repos: createFixtureRepositories(devStore),
     clock: systemClock,
     logger: createLogger({
-      minLevel: env.NODE_ENV === 'production' ? 'info' : 'debug',
+      minLevel: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
       base: { app: 'web' },
     }),
   };

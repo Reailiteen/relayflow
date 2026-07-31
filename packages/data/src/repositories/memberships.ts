@@ -1,22 +1,11 @@
-import type { Result } from '@relayflow/core';
-import {
-  membershipEntity,
-  type Membership,
-  type OrganizationId,
-  type UserId,
-} from '@relayflow/entities';
+import { membershipEntity } from '@relayflow/entities';
+import type { MembershipPort } from '@relayflow/ports';
 import type { RlsClient } from '../client';
 import { run, runMaybe } from '../repository';
 
-export interface MembershipRepository {
-  listForUser(userId: UserId): Promise<Result<Membership[]>>;
-  listForOrganization(organizationId: OrganizationId): Promise<Result<Membership[]>>;
-  find(organizationId: OrganizationId, userId: UserId): Promise<Result<Membership | null>>;
-}
-
 const COLUMNS = 'id, organization_id, user_id, role, status, created_at, updated_at';
 
-export function membershipRepository(client: RlsClient): MembershipRepository {
+export function membershipRepository(client: RlsClient): MembershipPort {
   return {
     listForUser: (userId) =>
       run(

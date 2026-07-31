@@ -11,20 +11,43 @@ that will be broken.
                     apps/web (Next.js)    apps/mobile (Expo)
                               │                    │
                               └────────┬───────────┘
-                                       │
+                                       │            apps pick an adapter
                               @relayflow/logic          use-cases
                               ┌────────┴────────┐
-                     @relayflow/access   @relayflow/data      policy · repositories
+                     @relayflow/access   @relayflow/ports     policy · storage interfaces
                               └────────┬────────┘
                               @relayflow/entities         schemas · domain types
                                        │
                 @relayflow/core · logger · tokens         primitives
-                                       │
-                  Supabase: Postgres + RLS + Auth + Storage
 ```
 
-`@relayflow/ui-web` and `@relayflow/ui-native` sit beside `logic` and may reach
-only `entities`, `tokens`, and `core`. Presentation never queries a database.
+Two adapters implement `ports`, and they are interchangeable:
+
+| Adapter               | Status                       | Backed by                    |
+| --------------------- | ---------------------------- | ---------------------------- |
+| `@relayflow/fixtures` | **in use** — what runs today | seeded in-memory data        |
+| `@relayflow/data`     | written, not yet wired       | Supabase Postgres + RLS      |
+
+`@relayflow/ui-web` and `@relayflow/ui-native` are reserved for shared
+presentation once the UI direction is settled; they will sit beside `logic` and
+may reach only `entities`, `tokens`, and `core`. Presentation never queries a
+database.
+
+## Current state: no backend
+
+The apps run entirely on in-memory fixtures. `pnpm dev:web` works on a fresh
+clone with no environment variables and no database.
+
+This is not a mock layer bolted over the UI. Screens call the real use-cases,
+which run the real policy checks against real domain types — only the storage
+implementation is a stand-in. So the parts most expensive to get wrong are being
+exercised from the first screen, and swapping in Supabase later touches exactly
+two files (`apps/web/src/server/context.ts`, `apps/mobile/src/session.ts`), both
+marked with the lines to replace.
+
+The schema, RLS policies, and transactional RPCs in `supabase/migrations/` are
+written and kept current as the specification for that swap. The CI job that
+applies them is gated behind `workflow_dispatch` until then.
 
 ## The four rules
 
@@ -37,11 +60,18 @@ policy can be tested without a database.
 _Enforced by:_ `packages/config/eslint/layers.mjs`, applied in every package's
 `eslint.config.mjs`. Violations fail `pnpm lint`.
 
-### 2. Only `@relayflow/data` speaks to Supabase
+### 2. Use-cases depend on interfaces, never on a database
 
-Every query lives in a repository. Apps and use-cases receive an interface, not
-a client. One place to audit query shape, one place where RLS context is
+`@relayflow/logic` imports `@relayflow/ports` and is forbidden — by lint — from
+importing either adapter. It cannot tell whether it is talking to Postgres or to
+an array in memory, which is what makes today's fixtures-only setup a genuine
+staging post rather than throwaway scaffolding.
+
+Every query lives in an adapter. Apps and use-cases receive an interface, not a
+client. One place to audit query shape, one place where RLS context is
 established, one place to change when the schema moves.
+
+Only `@relayflow/data` speaks to Supabase.
 
 The service-role client — which bypasses RLS entirely — lives behind
 `@relayflow/data/admin`, a subpath the lint rules forbid apps and `logic` from
@@ -90,14 +120,20 @@ PostgREST gives one transaction per request. A use-case issuing three
 `.insert()` calls has three independent transactions, and a failure on the third
 leaves the first two committed.
 
-**If a workflow writes to more than one table, it is a Postgres function**,
-defined in `supabase/migrations/` and invoked via `callRpc`. The function runs
-as the caller (`SECURITY INVOKER`) unless it has a specific reason not to, so
-moving work into SQL does not smuggle in extra privilege.
+**If a workflow writes to more than one table, the port exposes it as a single
+method whose contract requires atomicity**, and each adapter satisfies that
+however it can. The use-case never sequences the writes itself, because up there
+it has no way to make them atomic.
 
-`create_organization_with_owner` is the reference implementation: organization
-and owning membership in one transaction, because an organization with no owner
-is unrecoverable through the UI.
+`OrganizationPort.createWithOwner` is the reference case. The Supabase adapter
+implements it with a Postgres function (`create_organization_with_owner`) in one
+transaction; the fixtures adapter satisfies it by construction. An organization
+with no owner is unrecoverable through the UI, so neither is allowed to produce
+one.
+
+SQL functions run as the caller (`SECURITY INVOKER`) unless they have a specific
+reason not to, so moving work into the database does not smuggle in extra
+privilege.
 
 ## Defence in depth
 
@@ -143,8 +179,10 @@ race windows — so tests inject `fixedClock()`.
 | `@relayflow/logger`   | `packages/logger`    | Structured logging with redaction on by default    |
 | `@relayflow/tokens`   | `packages/tokens`    | Design tokens, shared by web CSS and native        |
 | `@relayflow/entities` | `packages/entities`  | Zod schemas, domain types, row → domain mapping    |
+| `@relayflow/ports`    | `packages/ports`     | Storage interfaces — no implementation             |
 | `@relayflow/access`   | `packages/access`    | Capabilities, actor, pure policy decisions         |
-| `@relayflow/data`     | `packages/data`      | Repositories, RPC wrapper, quarantined admin client |
+| `@relayflow/fixtures` | `packages/fixtures`  | In-memory adapter + seed data + dev actors        |
+| `@relayflow/data`     | `packages/data`      | Supabase adapter, quarantined admin client         |
 | `@relayflow/logic`    | `packages/logic`     | Use-cases: parse → authorize → execute             |
 | `@relayflow/config`   | `packages/config`    | tsconfig, ESLint, and the layer rules themselves   |
 
