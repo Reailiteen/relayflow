@@ -84,11 +84,6 @@ between editing a package and seeing the change.
 
 ## Database
 
-```bash
-supabase start
-supabase db reset                          # apply migrations from scratch
-pnpm --filter @relayflow/data generate:types
-```
-
-CI regenerates those types and fails on any diff, so schema drift breaks the
-build rather than surfacing later as a runtime parse error.
+Deferred, and **hosted-only** when it arrives — no local stack, no Docker, no
+`supabase start`. See `supabase/README.md` for the setup steps and
+`docs/ARCHITECTURE.md` for why the schema is shaped the way it is.

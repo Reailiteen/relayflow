@@ -52,10 +52,13 @@ jobs:
         run: pnpm turbo run build
 
   database:
-    name: migrations · RLS
+    name: schema drift
     # Deferred: the schema and policies are written and kept in the repo, but
-    # nothing runs against them yet. Flip this to `pull_request` (and drop the
-    # `if`) on the commit that wires Supabase up.
+    # no project exists yet. Flip this to `pull_request` (and drop the `if`) on
+    # the commit that wires Supabase up.
+    #
+    # There is no local stack here on purpose — no `supabase start`, no Docker.
+    # Everything runs against the hosted project over its connection string.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -66,16 +69,16 @@ jobs:
         with:
           version: latest
 
-      # Applying every migration to an empty database catches ordering mistakes
-      # and syntax errors that only surface on a fresh environment.
-      - name: Apply migrations
-        run: supabase db start
-
-      # Schema drift between the database and the generated types is a runtime
+      # Schema drift between the project and the checked-in types is a runtime
       # parse failure waiting to happen. Fail here instead.
+      #
+      # Read-only: this generates types and compares. Migrations are applied by
+      # a deploy step, never by a pull request.
       - name: Check generated types are current
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          supabase gen types typescript --local --schema public \
+          supabase gen types typescript --db-url "$SUPABASE_DB_URL" --schema public \
             > /tmp/database.types.ts
           if ! diff -q /tmp/database.types.ts \
                packages/data/src/generated/database.types.ts > /dev/null; then

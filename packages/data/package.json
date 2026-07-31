@@ -15,8 +15,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
-    "generate:types": "supabase gen types typescript --local --schema public > src/generated/database.types.ts",
-    "clean": "rm -rf .turbo *.tsbuildinfo"
+    "generate:types": "supabase gen types typescript --db-url \"$SUPABASE_DB_URL\" --schema public > src/generated/database.types.ts",
+    "clean": "rm -rf .turbo *.tsbuildinfo",
+    "db:push": "supabase db push --db-url \"$SUPABASE_DB_URL\""
   },
   "dependencies": {
     "@relayflow/core": "workspace:*",

@@ -1,10 +1,11 @@
 /**
- * PLACEHOLDER — regenerate with `pnpm --filter @relayflow/data generate:types`
- * once the local Supabase stack is running.
+ * PLACEHOLDER — hand-written to match supabase/migrations. Regenerate with
+ * `pnpm --filter @relayflow/data generate:types` once the hosted project
+ * exists and SUPABASE_DB_URL is set.
  *
- * Checked in on purpose: typecheck must work on a clean clone without a
- * database. CI regenerates and diffs this file, so schema drift fails the
- * build instead of surfacing as a runtime parse error.
+ * Checked in on purpose: typecheck must work on a clean clone with no database
+ * and no credentials. CI regenerates and diffs this file, so schema drift fails
+ * the build instead of surfacing as a runtime parse error.
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
