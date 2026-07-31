@@ -41,9 +41,9 @@ export interface AccessQuery {
    *
    * Pass ANY_STARTUP only as the first half of a two-step check.
    */
-  readonly startupId?: StartupId | AnyStartup;
+  readonly startupId?: StartupId | AnyStartup | undefined;
   /** The candidate this action targets, for candidate-scoped capabilities. */
-  readonly candidateId?: CandidateId;
+  readonly candidateId?: CandidateId | undefined;
 }
 
 export type DenialReason =

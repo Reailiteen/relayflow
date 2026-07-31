@@ -1,37 +1,147 @@
 /**
- * Web-side mirror of src/index.ts, wired into Tailwind v4's @theme.
- * Keep the values in sync with the TypeScript source — the native app reads
- * that one, and a divergence here is how the two apps stop looking alike.
+ * Web mirror of src/index.ts, in the variable names shadcn/ui expects.
+ *
+ * Two naming layers on purpose: the `--rf-*` variables are RelayFlow's own
+ * semantic tokens, and the shadcn names alias them. That way `npx shadcn add`
+ * drops in components that are already on our palette, with no restyling pass
+ * and no second source of truth to keep in sync.
  */
 
-@theme {
-  --color-bg: oklch(1 0 0);
-  --color-surface: oklch(0.985 0.002 250);
-  --color-surface-raised: oklch(1 0 0);
-  --color-border: oklch(0.925 0.005 250);
-  --color-text: oklch(0.21 0.009 250);
-  --color-text-muted: oklch(0.44 0.012 250);
-  --color-accent: oklch(0.62 0.18 255);
-  --color-accent-text: oklch(1 0 0);
-  --color-positive: oklch(0.65 0.16 150);
-  --color-caution: oklch(0.78 0.15 85);
-  --color-critical: oklch(0.58 0.2 27);
+@layer theme {
+  :root {
+    /* ── RelayFlow semantic tokens (light) ───────────────────────────────── */
+    --rf-background: oklch(0.984 0.002 265);
+    --rf-surface: oklch(1 0 0);
+    --rf-surface-sunken: oklch(0.968 0.003 265);
+    --rf-surface-hover: oklch(0.968 0.003 265);
+    --rf-border: oklch(0.925 0.005 265);
+    --rf-border-strong: oklch(0.871 0.007 265);
+    --rf-text-primary: oklch(0.197 0.009 265);
+    --rf-text-secondary: oklch(0.452 0.013 265);
+    --rf-text-muted: oklch(0.556 0.013 265);
+    --rf-text-inverse: oklch(1 0 0);
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+    /* Brand: interactive things only. Never state. */
+    --rf-accent: oklch(0.512 0.152 12);
+    --rf-accent-hover: oklch(0.448 0.145 12);
+    --rf-accent-subtle: oklch(0.965 0.015 12);
+    --rf-accent-text: oklch(1 0 0);
+
+    /* State: independent of brand, so a button never reads as an alarm. */
+    --rf-critical: oklch(0.585 0.205 27);
+    --rf-critical-subtle: oklch(0.955 0.022 27);
+    --rf-critical-text: oklch(0.395 0.155 27);
+    --rf-warning: oklch(0.735 0.155 68);
+    --rf-warning-subtle: oklch(0.965 0.035 78);
+    --rf-warning-text: oklch(0.455 0.098 58);
+    --rf-positive: oklch(0.615 0.135 155);
+    --rf-positive-subtle: oklch(0.958 0.028 155);
+    --rf-positive-text: oklch(0.405 0.092 155);
+    --rf-info: oklch(0.605 0.135 245);
+    --rf-info-subtle: oklch(0.958 0.025 245);
+    --rf-info-text: oklch(0.412 0.105 245);
+
+    --radius: 5px;
+  }
+
+  .dark {
+    --rf-background: oklch(0.118 0.007 265);
+    --rf-surface: oklch(0.155 0.008 265);
+    --rf-surface-sunken: oklch(0.118 0.007 265);
+    --rf-surface-hover: oklch(0.197 0.009 265);
+    --rf-border: oklch(0.234 0.01 265);
+    --rf-border-strong: oklch(0.279 0.011 265);
+    --rf-text-primary: oklch(0.968 0.003 265);
+    --rf-text-secondary: oklch(0.708 0.011 265);
+    --rf-text-muted: oklch(0.556 0.013 265);
+    --rf-text-inverse: oklch(0.118 0.007 265);
+
+    --rf-accent: oklch(0.625 0.14 12);
+    --rf-accent-hover: oklch(0.745 0.105 12);
+    --rf-accent-subtle: oklch(0.255 0.072 12);
+    --rf-accent-text: oklch(1 0 0);
+
+    --rf-critical: oklch(0.685 0.185 27);
+    --rf-critical-subtle: oklch(0.275 0.075 27);
+    --rf-critical-text: oklch(0.845 0.105 27);
+    --rf-warning: oklch(0.785 0.145 72);
+    --rf-warning-subtle: oklch(0.285 0.065 68);
+    --rf-warning-text: oklch(0.865 0.095 78);
+    --rf-positive: oklch(0.705 0.135 155);
+    --rf-positive-subtle: oklch(0.265 0.062 155);
+    --rf-positive-text: oklch(0.845 0.098 155);
+    --rf-info: oklch(0.695 0.125 245);
+    --rf-info-subtle: oklch(0.265 0.062 245);
+    --rf-info-text: oklch(0.845 0.085 245);
+  }
 }
 
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-bg: oklch(0.145 0.008 250);
-    --color-surface: oklch(0.21 0.009 250);
-    --color-surface-raised: oklch(0.27 0.01 250);
-    --color-border: oklch(0.27 0.01 250);
-    --color-text: oklch(0.985 0.002 250);
-    --color-text-muted: oklch(0.708 0.01 250);
-    --color-accent: oklch(0.78 0.12 255);
-    --color-accent-text: oklch(0.145 0.008 250);
-  }
+/* ── Tailwind v4 theme + shadcn/ui aliases ─────────────────────────────────
+   `@theme inline` resolves these at build time, so utilities like bg-surface
+   and text-critical exist alongside shadcn's bg-background / text-foreground. */
+@theme inline {
+  --color-background: var(--rf-background);
+  --color-surface: var(--rf-surface);
+  --color-surface-sunken: var(--rf-surface-sunken);
+  --color-surface-hover: var(--rf-surface-hover);
+  --color-border: var(--rf-border);
+  --color-border-strong: var(--rf-border-strong);
+  --color-text: var(--rf-text-primary);
+  --color-text-secondary: var(--rf-text-secondary);
+  --color-text-muted: var(--rf-text-muted);
+
+  --color-accent: var(--rf-accent);
+  --color-accent-hover: var(--rf-accent-hover);
+  --color-accent-subtle: var(--rf-accent-subtle);
+  --color-accent-text: var(--rf-accent-text);
+
+  --color-critical: var(--rf-critical);
+  --color-critical-subtle: var(--rf-critical-subtle);
+  --color-critical-text: var(--rf-critical-text);
+  --color-warning: var(--rf-warning);
+  --color-warning-subtle: var(--rf-warning-subtle);
+  --color-warning-text: var(--rf-warning-text);
+  --color-positive: var(--rf-positive);
+  --color-positive-subtle: var(--rf-positive-subtle);
+  --color-positive-text: var(--rf-positive-text);
+  --color-info: var(--rf-info);
+  --color-info-subtle: var(--rf-info-subtle);
+  --color-info-text: var(--rf-info-text);
+
+  /* shadcn/ui names, aliased so generated components need no restyling. */
+  --color-foreground: var(--rf-text-primary);
+  --color-card: var(--rf-surface);
+  --color-card-foreground: var(--rf-text-primary);
+  --color-popover: var(--rf-surface);
+  --color-popover-foreground: var(--rf-text-primary);
+  --color-primary: var(--rf-accent);
+  --color-primary-foreground: var(--rf-accent-text);
+  --color-secondary: var(--rf-surface-sunken);
+  --color-secondary-foreground: var(--rf-text-primary);
+  --color-muted: var(--rf-surface-sunken);
+  --color-muted-foreground: var(--rf-text-muted);
+  --color-destructive: var(--rf-critical);
+  --color-destructive-foreground: var(--rf-text-inverse);
+  --color-input: var(--rf-border);
+  --color-ring: var(--rf-accent);
+
+  /* Console type ramp: anchored at 13px, tighter than Tailwind's default. */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 19px;
+  --text-2xl: 23px;
+  --text-3xl: 28px;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 }

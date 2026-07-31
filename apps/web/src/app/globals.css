@@ -1,8 +1,9 @@
 @import 'tailwindcss';
 @import '@relayflow/tokens/css';
 
-/* Component styles belong in components. This file holds only the base layer:
-   the token import above and the handful of element defaults below. */
+/* Shared packages ship raw TSX, so Tailwind must be told to scan them —
+   otherwise every class used only inside @relayflow/ui-web is stripped. */
+@source '../../../../packages/ui-web/src';
 
 @layer base {
   html {
@@ -10,17 +11,22 @@
   }
 
   body {
-    background-color: var(--color-bg);
-    color: var(--color-text);
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background-color: var(--rf-background);
+    color: var(--rf-text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Visible focus is a requirement, not a preference. */
+  /* Digits must line up in columns. A console is mostly numbers. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
   :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
+    outline: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

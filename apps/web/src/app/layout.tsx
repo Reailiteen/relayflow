@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Relayflow',
-  description: 'Relayflow web application.',
+  title: { default: 'RelayFlow', template: '%s · RelayFlow' },
+  description: 'Internship operations for QSTP — allocation through onboarding.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
