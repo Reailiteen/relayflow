@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { err, notFound, ok } from '@relayflow/core';
 import {
   budgetView,
+  lowConfidenceFields,
   contenders,
   effectiveDeadline,
   isProtected,
@@ -12,6 +13,7 @@ import {
   type Allocation,
   type BudgetView,
   type Candidate,
+  type CandidateDocument,
   type CandidateId,
   type ExceptionRequest,
   type HourTier,
@@ -314,3 +316,89 @@ export const getRedistributionPlan = defineUseCase({
 });
 
 export type { StartupId };
+
+// ─── Document verification queue ─────────────────────────────────────────────
+
+export interface VerificationItem {
+  readonly document: CandidateDocument;
+  readonly candidate: Candidate | null;
+  /** The startup they are placed with, for NDAs and for context. */
+  readonly startup: Startup | null;
+  /** Fields the candidate corrected — the ones worth reading closely. */
+  readonly corrected: readonly { label: string; extracted: string; confirmed: string }[];
+  /** Fields OCR was unsure about, even if the candidate accepted them as-is. */
+  readonly lowConfidence: readonly string[];
+}
+
+export interface VerificationQueue {
+  readonly awaiting: readonly VerificationItem[];
+  readonly recentlyDecided: readonly VerificationItem[];
+}
+
+/**
+ * What QSTP has to check.
+ *
+ * The queue surfaces two things the raw document does not: which fields the
+ * candidate *changed* from what OCR read, and which ones OCR was unsure about.
+ * A verifier with forty documents to get through should be told where to look
+ * rather than re-reading every field on every one.
+ */
+export const getVerificationQueue = defineUseCase({
+  name: 'qstp.verificationQueue',
+  input: z.object({}),
+  authorize: { capability: 'document:read_all' as const },
+
+  execute: async (ctx) => {
+    const cycleResult = await ctx.repos.cycles.findActive();
+    if (!cycleResult.ok) return cycleResult;
+    const cycle = cycleResult.data;
+    if (!cycle) return err(notFound('There is no active cycle.'));
+
+    const [candidates, startups, awaiting] = await Promise.all([
+      ctx.repos.candidates.listForCycle(cycle.id),
+      ctx.repos.startups.listForCycle(cycle.id),
+      ctx.repos.documents.listAwaitingVerification(cycle.id),
+    ]);
+    if (!candidates.ok) return err(candidates.error);
+    if (!startups.ok) return err(startups.error);
+    if (!awaiting.ok) return err(awaiting.error);
+
+    // Everything else for the candidates who have anything in the queue, so
+    // the screen can show a person's full set rather than one loose document.
+    const seen = new Set(awaiting.data.map((d) => d.candidateId));
+    const decided: CandidateDocument[] = [];
+    for (const candidateId of seen) {
+      const theirs = await ctx.repos.documents.listForCandidate(candidateId);
+      if (!theirs.ok) return err(theirs.error);
+      decided.push(
+        ...theirs.data.filter((d) => d.status === 'verified' || d.status === 'rejected'),
+      );
+    }
+
+    const toItem = (document: CandidateDocument): VerificationItem => ({
+      document,
+      candidate: candidates.data.find((c) => c.id === document.candidateId) ?? null,
+      startup: document.startupId
+        ? (startups.data.find((s) => s.id === document.startupId) ?? null)
+        : null,
+      corrected: document.fields
+        .filter(
+          (field) =>
+            field.confirmed !== null &&
+            field.extracted !== null &&
+            field.confirmed !== field.extracted,
+        )
+        .map((field) => ({
+          label: field.label,
+          extracted: field.extracted ?? '',
+          confirmed: field.confirmed ?? '',
+        })),
+      lowConfidence: lowConfidenceFields(document.fields).map((field) => field.label),
+    });
+
+    return ok<VerificationQueue>({
+      awaiting: awaiting.data.map(toItem),
+      recentlyDecided: decided.map(toItem),
+    });
+  },
+});

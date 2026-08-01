@@ -42,7 +42,7 @@ const FORBIDDEN = {
   // The important one: logic talks to ports, never to a concrete adapter.
   logic: ['data', 'fixtures', 'ui-web', 'ui-native'],
   'ui-web': ['data', 'fixtures', 'logic', 'ports', 'access', 'ui-native'],
-  'ui-native': ['data', 'fixtures', 'logic', 'ui-web'],
+  'ui-native': ['data', 'fixtures', 'logic', 'ports', 'access', 'ui-web'],
 };
 
 const reason = (self, target) =>

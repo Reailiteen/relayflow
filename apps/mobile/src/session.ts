@@ -1,6 +1,6 @@
 import { systemClock } from '@relayflow/core';
-import type { MaybeActor } from '@relayflow/access';
-import { createFixtureRepositories, createStore, devActor } from '@relayflow/fixtures';
+import { isCandidate, isStartup, type MaybeActor } from '@relayflow/access';
+import { DEV_ACTOR_NAMES, createFixtureRepositories, createStore, devActor } from '@relayflow/fixtures';
 import { createLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '@relayflow/logic';
 
@@ -12,8 +12,7 @@ import type { UseCaseContext } from '@relayflow/logic';
  * because they share the code that makes it — that is the whole reason `logic`
  * is a package rather than a folder in each app.
  *
- * Running on fixtures for now; see the note in the web context. Swapping in
- * Supabase is a change to this file alone.
+ * Running on fixtures. Swapping in Supabase is a change to this file alone.
  */
 
 const logger = createLogger({
@@ -24,11 +23,27 @@ const logger = createLogger({
 /** One store per app launch, so writes persist while you navigate. */
 const store = createStore();
 
-let actingAs = 'candidate';
+/** Mobile carries the candidate and startup portals; QSTP stays on the web. */
+export const MOBILE_PERSONAS = DEV_ACTOR_NAMES.filter(
+  (name) => name === 'candidate' || name === 'startupOwner' || name === 'lateStartup',
+);
 
-/** Dev affordance: re-run the app as a different seeded user. */
+let actingAs: string = 'candidate';
+const listeners = new Set<() => void>();
+
 export function setActingAs(name: string) {
   actingAs = name;
+  for (const listener of listeners) listener();
+}
+
+export function getActingAs(): string {
+  return actingAs;
+}
+
+/** Lets screens re-render when the dev persona changes. */
+export function subscribeToActor(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function resolveActor(): MaybeActor {
@@ -44,4 +59,11 @@ export function createContext(): UseCaseContext {
     clock: systemClock,
     logger,
   };
+}
+
+/** Which portal this session belongs in. Drives the initial route. */
+export function portalFor(actor: MaybeActor): 'candidate' | 'startup' | null {
+  if (isCandidate(actor)) return 'candidate';
+  if (isStartup(actor)) return 'startup';
+  return null;
 }

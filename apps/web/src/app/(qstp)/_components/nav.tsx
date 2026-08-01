@@ -35,7 +35,7 @@ const SECTIONS = [
   { href: '/selection', label: 'Selection', icon: ShieldAlert, ready: true },
   { href: '/exceptions', label: 'Exceptions', icon: CalendarClock, ready: true },
   { href: '/redistribution', label: 'Redistribution', icon: Recycle, ready: true },
-  { href: '/documents', label: 'Documents', icon: FileCheck2, ready: false },
+  { href: '/documents', label: 'Documents', icon: FileCheck2, ready: true },
 ] as const;
 
 export function currentSectionLabel(pathname: string): string {
