@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@relayflow/tokens/css';
+@import '@relayflow/tokens/console.css';
 
 /* Shared packages ship raw TSX, so Tailwind must be told to scan them —
    otherwise every class used only inside @relayflow/ui-web is stripped. */

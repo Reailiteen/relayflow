@@ -24,7 +24,7 @@ export default async function RedistributionPage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -42,7 +42,7 @@ export default async function RedistributionPage() {
   const available = dashboard.ok ? dashboard.data.budget.unallocated : 0;
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p className="text-sm text-text-muted">
           {plan.deadlinePassed

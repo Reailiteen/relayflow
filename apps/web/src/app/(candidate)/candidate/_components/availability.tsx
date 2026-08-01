@@ -67,7 +67,7 @@ export function AvailabilityPrompt({ current }: { current: string }) {
     <Panel>
       <PanelHeader title="Are you still available?" />
 
-      <div className="flex flex-col gap-1.5 p-3">
+      <div className="flex flex-col gap-2 p-5">
         <p className="mb-1 text-base text-text-secondary">
           Startups are reviewing candidates now. Telling us where you stand takes one tap and saves
           everyone a wasted interview.

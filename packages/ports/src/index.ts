@@ -15,6 +15,21 @@ import type {
   StartupId,
   StartupMember,
   CandidateId,
+  ActivityEvent,
+  CycleParticipation,
+  PrioritizationRun,
+  Placement,
+  PlacementRequirement,
+  RequirementSubmission,
+  PlacementSignature,
+  RecoveryCase,
+  RedistributionRound,
+  RedistributionRoundId,
+  DocumentRequirementTemplate,
+  TaskTemplate,
+  TaskAssignment,
+  SelectionConflict,
+  CandidateChoiceFallback,
   DocumentId,
   InterviewId,
   PoolEntryId,
@@ -41,6 +56,111 @@ export interface CyclePort {
   /** The cycle currently being operated. Null before the first one is created. */
   findActive(): Promise<Result<Cycle | null>>;
   list(): Promise<Result<Cycle[]>>;
+  create(input: CreateCycleCommand): Promise<Result<Cycle>>;
+  update(input: UpdateCycleCommand): Promise<Result<Cycle>>;
+  advance(input: AdvanceCycleCommand): Promise<Result<Cycle>>;
+  archive(id: CycleId, archivedAt: string): Promise<Result<Cycle>>;
+}
+
+export interface CreateCycleCommand {
+  readonly cycle: Omit<Cycle, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>;
+  readonly cloneParticipationFrom: CycleId | null;
+  readonly createdAt: string;
+}
+
+export interface UpdateCycleCommand {
+  readonly cycleId: CycleId;
+  readonly name: string;
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly fundedWeeklyHours: number;
+  readonly selectionMode: Cycle['selectionMode'];
+  readonly deadlines: Cycle['deadlines'];
+  readonly updatedAt: string;
+}
+
+export interface AdvanceCycleCommand {
+  readonly cycleId: CycleId;
+  readonly from: Cycle['stage'];
+  readonly to: Cycle['stage'];
+  readonly updatedAt: string;
+}
+
+export interface ParticipationPort {
+  listForCycle(cycleId: CycleId): Promise<Result<CycleParticipation[]>>;
+  find(cycleId: CycleId, startupId: StartupId): Promise<Result<CycleParticipation | null>>;
+  save(input: Omit<CycleParticipation, 'id' | 'createdAt' | 'updatedAt'> & { occurredAt: string }): Promise<Result<CycleParticipation>>;
+  acknowledge(cycleId: CycleId, startupId: StartupId, actorId: UserId, occurredAt: string): Promise<Result<CycleParticipation>>;
+}
+
+export interface PrioritizationPort {
+  run(cycleId: CycleId, createdBy: UserId, createdAt: string): Promise<Result<PrioritizationRun>>;
+  listForCycle(cycleId: CycleId): Promise<Result<PrioritizationRun[]>>;
+  confirm(runId: PrioritizationRun['id'], confirmedAt: string): Promise<Result<PrioritizationRun>>;
+}
+
+export interface ActivityPort {
+  append(event: Omit<ActivityEvent, 'id'>): Promise<Result<ActivityEvent>>;
+  listForCycle(cycleId: CycleId): Promise<Result<ActivityEvent[]>>;
+  listForEntity(cycleId: CycleId, entityType: string, entityId: string): Promise<Result<ActivityEvent[]>>;
+}
+
+export interface TaskPort {
+  listTemplates(positionId: PositionId): Promise<Result<TaskTemplate[]>>;
+  saveTemplate(input: Omit<TaskTemplate, 'id'>): Promise<Result<TaskTemplate>>;
+  listAssignments(candidateId: CandidateId): Promise<Result<TaskAssignment[]>>;
+  listForCycle(cycleId: CycleId): Promise<Result<TaskAssignment[]>>;
+  assign(input: Omit<TaskAssignment, 'id' | 'createdAt' | 'updatedAt'> & { occurredAt: string }): Promise<Result<TaskAssignment>>;
+  submit(assignmentId: TaskAssignment['id'], candidateId: CandidateId, fileName: string | null, linkUrl: string | null, occurredAt: string): Promise<Result<TaskAssignment>>;
+  review(assignmentId: TaskAssignment['id'], reviewerId: UserId, notes: string, occurredAt: string): Promise<Result<TaskAssignment>>;
+}
+
+export interface PlacementPort {
+  findById(id: Placement['id']): Promise<Result<Placement | null>>;
+  listForCycle(cycleId: CycleId): Promise<Result<Placement[]>>;
+  listForCandidate(candidateId: CandidateId): Promise<Result<Placement[]>>;
+  confirmSelection(selectionId: Selection['id'], input: { startsOn: string; endsOn: string; supervisorId: UserId | null; supervisorName: string; confirmedBy: UserId; occurredAt: string }): Promise<Result<Placement>>;
+  setReadiness(input: { placementId: Placement['id']; party: 'candidate' | 'startup' | 'details' | 'qstp'; actorId: UserId; occurredAt: string }): Promise<Result<Placement>>;
+  markReady(placementId: Placement['id'], occurredAt: string): Promise<Result<Placement>>;
+  onboard(placementId: Placement['id'], occurredAt: string): Promise<Result<Placement>>;
+  cancel(placementId: Placement['id'], reason: string, actorId: UserId, occurredAt: string): Promise<Result<{ placement: Placement; recoveryCase: RecoveryCase }>>;
+}
+
+export interface RequirementPort {
+  listTemplates(cycleId: CycleId): Promise<Result<DocumentRequirementTemplate[]>>;
+  saveTemplate(input: Omit<DocumentRequirementTemplate, 'id' | 'createdAt' | 'updatedAt'> & { occurredAt: string }): Promise<Result<DocumentRequirementTemplate>>;
+  snapshotForPlacement(placementId: Placement['id'], occurredAt: string): Promise<Result<PlacementRequirement[]>>;
+  listForPlacement(placementId: Placement['id']): Promise<Result<PlacementRequirement[]>>;
+  amend(input: Omit<PlacementRequirement, 'id' | 'createdAt' | 'updatedAt'> & { reason: string; occurredAt: string }): Promise<Result<PlacementRequirement>>;
+  submit(input: { requirementId: PlacementRequirement['id']; fileName: string; submittedBy: UserId; extractedFields: RequirementSubmission['extractedFields']; occurredAt: string }): Promise<Result<RequirementSubmission>>;
+  decide(input: { requirementId: PlacementRequirement['id']; decision: 'approved' | 'correction_requested' | 'rejected' | 'waived'; reason: string | null; occurredAt: string }): Promise<Result<PlacementRequirement>>;
+  listSubmissions(requirementId: PlacementRequirement['id']): Promise<Result<RequirementSubmission[]>>;
+  sign(input: Omit<PlacementSignature, 'id'>): Promise<Result<PlacementSignature>>;
+  listSignatures(placementId: Placement['id']): Promise<Result<PlacementSignature[]>>;
+}
+
+export interface RecoveryPort {
+  listForCycle(cycleId: CycleId): Promise<Result<RecoveryCase[]>>;
+  confirm(caseId: RecoveryCase['id'], actorId: UserId, occurredAt: string): Promise<Result<RecoveryCase>>;
+  protect(caseId: RecoveryCase['id'], until: string, occurredAt: string): Promise<Result<RecoveryCase>>;
+  createRound(input: { cycleId: CycleId; recoveryCaseIds: readonly RecoveryCase['id'][]; positionDeadline: string; selectionDeadline: string; createdBy: UserId; occurredAt: string }): Promise<Result<RedistributionRound>>;
+  listRounds(cycleId: CycleId): Promise<Result<RedistributionRound[]>>;
+  invite(roundId: RedistributionRound['id'], startupId: StartupId, proposedHours: number, occurredAt: string): Promise<Result<RedistributionRound>>;
+  respond(roundId: RedistributionRound['id'], startupId: StartupId, response: 'accepted' | 'declined', occurredAt: string): Promise<Result<RedistributionRound>>;
+  closeRound(roundId: RedistributionRound['id'], occurredAt: string): Promise<Result<RedistributionRound>>;
+}
+
+export interface ConflictPort {
+  listForCycle(cycleId: CycleId): Promise<Result<SelectionConflict[]>>;
+  record(input: Omit<SelectionConflict, 'id'>): Promise<Result<SelectionConflict>>;
+  resolve(id: SelectionConflict['id'], decision: 'dismissed' | 'overridden', actorId: UserId, reason: string, occurredAt: string): Promise<Result<SelectionConflict>>;
+}
+
+export interface FallbackPort {
+  listForCycle(cycleId: CycleId): Promise<Result<CandidateChoiceFallback[]>>;
+  open(input: { cycleId: CycleId; candidateId: CandidateId; responseDeadline: string; openedBy: UserId; occurredAt: string }): Promise<Result<CandidateChoiceFallback>>;
+  respond(input: { caseId: CandidateChoiceFallback['id']; response: 'accepted' | 'declined'; actorId: UserId; nextResponseDeadline: string | null; occurredAt: string }): Promise<Result<CandidateChoiceFallback>>;
+  override(input: { caseId: CandidateChoiceFallback['id']; selectionId: Selection['id']; actorId: UserId; reason: string; highRiskConfirmed: boolean; occurredAt: string }): Promise<Result<CandidateChoiceFallback>>;
 }
 
 export interface StartupPort {
@@ -54,6 +174,7 @@ export interface StartupPort {
 export interface AllocationPort {
   listForCycle(cycleId: CycleId): Promise<Result<Allocation[]>>;
   findForStartup(cycleId: CycleId, startupId: StartupId): Promise<Result<Allocation | null>>;
+  listHistoryForCycle(cycleId: CycleId): Promise<Result<Allocation[]>>;
   /**
    * Assigns or updates a startup's tier.
    *
@@ -74,6 +195,7 @@ export interface DecideAllocationCommand {
   readonly overrideReason: string | null;
   readonly decidedBy: UserId;
   readonly decidedAt: string;
+  readonly redistributionRoundId: RedistributionRoundId | null;
 }
 
 export interface PositionPort {
@@ -94,10 +216,13 @@ export interface CreatePositionCommand {
   readonly title: string;
   readonly description: string;
   readonly requiredSkills: readonly string[];
+  readonly workArrangement: Position['workArrangement'];
+  readonly additionalRequirements: string | null;
   readonly internCount: number;
   readonly hoursPerIntern: number;
   readonly durationWeeks: number;
   readonly supervisorName: string | null;
+  readonly redistributionRoundId: RedistributionRoundId | null;
 }
 
 export interface CandidatePort {
@@ -206,6 +331,41 @@ export interface SelectionPort {
    */
   reserve(input: ReserveCommand): Promise<Result<Selection>>;
 
+  /**
+   * Records a startup's non-blocking interest, for `candidate_choice` cycles.
+   *
+   * The mirror image of `reserve`: it must *not* refuse because another startup
+   * has already offered — several offers coexisting is the entire point. It
+   * must still refuse when someone holds a blocking claim, or a startup could
+   * offer to a candidate who has already been reserved and the candidate would
+   * be shown a choice they do not have.
+   *
+   * A startup offering twice for the same position is a duplicate, not a
+   * conflict, and is refused as one.
+   */
+  offer(input: OfferCommand): Promise<Result<Selection>>;
+
+  /**
+   * The candidate accepts one offer, in a single atomic write: the chosen claim
+   * becomes `reserved`, every sibling offer becomes `declined`.
+   *
+   * **Must go through the same guard as `reserve`.** Accepting is where an
+   * offer turns into a blocking claim, so it races with any FCFS reservation
+   * and with a second acceptance, and the partial unique index is what settles
+   * both. Writing the accept without that guard would reopen the exact window
+   * the index exists to close.
+   *
+   * Returns a `conflict` error when the offer is no longer open, or when a
+   * blocking claim appeared while the candidate was deciding.
+   */
+  acceptOffer(input: AcceptOfferCommand): Promise<Result<Selection>>;
+
+  /** Candidate accepts a first-come reservation before QSTP confirms it. */
+  acceptReservation(input: AcceptOfferCommand): Promise<Result<Selection>>;
+
+  /** Candidate declines either an offer or reservation; history is retained. */
+  decline(selectionId: Selection['id'], candidateId: CandidateId, occurredAt: string): Promise<Result<Selection>>;
+
   release(selectionId: Selection['id'], releasedAt: string): Promise<Result<Selection>>;
 }
 
@@ -215,6 +375,21 @@ export interface ReserveCommand {
   readonly candidateId: CandidateId;
   readonly selectedBy: UserId;
   readonly reservedAt: string;
+}
+
+export interface OfferCommand {
+  readonly positionId: PositionId;
+  readonly startupId: StartupId;
+  readonly candidateId: CandidateId;
+  readonly selectedBy: UserId;
+  readonly offeredAt: string;
+}
+
+export interface AcceptOfferCommand {
+  readonly selectionId: Selection['id'];
+  /** Read from the actor, never from input — the port re-checks it owns this. */
+  readonly candidateId: CandidateId;
+  readonly acceptedAt: string;
 }
 
 export interface ExceptionPort {
@@ -354,4 +529,13 @@ export interface Repositories {
   readonly exceptions: ExceptionPort;
   readonly interviews: InterviewPort;
   readonly documents: DocumentPort;
+  readonly participation: ParticipationPort;
+  readonly prioritization: PrioritizationPort;
+  readonly activity: ActivityPort;
+  readonly tasks: TaskPort;
+  readonly placements: PlacementPort;
+  readonly requirements: RequirementPort;
+  readonly recovery: RecoveryPort;
+  readonly conflicts: ConflictPort;
+  readonly fallbacks: FallbackPort;
 }

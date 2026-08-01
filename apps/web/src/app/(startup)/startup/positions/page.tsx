@@ -10,9 +10,13 @@ export const metadata = { title: 'Positions' };
 const STATUS_TONE = {
   draft: 'neutral',
   submitted: 'info',
+  under_review: 'info',
   changes_requested: 'warning',
+  resubmitted: 'info',
   approved: 'positive',
+  locked: 'positive',
   filled: 'positive',
+  closed: 'neutral',
   withdrawn: 'neutral',
 } as const;
 
@@ -22,7 +26,7 @@ export default async function StartupPositionsPage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -34,7 +38,7 @@ export default async function StartupPositionsPage() {
   const canAddMore = remainingHours > 0;
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-4xl flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <MetricBar className="lg:grid-cols-3">
         <Metric label="Allocated" value={allocatedHours} hint="weekly hours" />
         <Metric label="Used by roles" value={usedHours} />

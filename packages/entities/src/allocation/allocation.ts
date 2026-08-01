@@ -9,6 +9,7 @@ import {
   type CycleId,
   type StartupId,
   type UserId,
+  type RedistributionRoundId,
 } from '../shared/ids';
 import { HOUR_TIERS, type HourTier } from './hours';
 
@@ -27,6 +28,7 @@ export const ALLOCATION_STATUSES = [
   'confirmed', // startup can see it and submit positions against it
   'declined', // startup was offered hours and turned them down
   'forfeited', // deadline passed with no selection and no exception
+  'superseded', // an immutable prior revision; never consumes the live budget
 ] as const;
 
 export const allocationStatus = z.enum(ALLOCATION_STATUSES);
@@ -50,6 +52,9 @@ export interface Allocation {
   readonly justification: string | null;
   /** True when granted in a redistribution round rather than the first pass. */
   readonly fromRedistribution: boolean;
+  readonly revision: number;
+  readonly supersedesAllocationId: AllocationId | null;
+  readonly redistributionRoundId: RedistributionRoundId | null;
   readonly decidedBy: UserId | null;
   readonly decidedAt: string | null;
   readonly createdAt: string;
@@ -76,6 +81,9 @@ export const allocationRow = z.object({
   override_reason: z.string().nullable(),
   justification: z.string().nullable(),
   from_redistribution: z.boolean(),
+  revision: z.number().int().min(1).default(1),
+  supersedes_allocation_id: allocationId.nullable().default(null),
+  redistribution_round_id: z.uuid().nullable().default(null),
   decided_by: userId.nullable(),
   decided_at: z.iso.datetime({ offset: true }).nullable(),
   ...auditColumns,
@@ -94,6 +102,9 @@ export const allocationEntity = defineEntity({
     overrideReason: row.override_reason,
     justification: row.justification,
     fromRedistribution: row.from_redistribution,
+    revision: row.revision,
+    supersedesAllocationId: row.supersedes_allocation_id,
+    redistributionRoundId: row.redistribution_round_id as Allocation['redistributionRoundId'],
     decidedBy: row.decided_by,
     decidedAt: row.decided_at,
     createdAt: row.created_at,

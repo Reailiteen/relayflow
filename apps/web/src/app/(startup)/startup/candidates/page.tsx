@@ -33,7 +33,7 @@ export default async function StartupCandidatesPage({
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -48,7 +48,7 @@ export default async function StartupCandidatesPage({
   const editable = can(actor, { capability: 'selection:create', startupId: ANY_STARTUP });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 p-3">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p className="text-sm text-text-muted">
           {deadlinePassed ? 'Selection closed' : 'Selection closes'} {date(selectionDeadline)}.

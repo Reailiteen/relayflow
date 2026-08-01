@@ -24,7 +24,7 @@ export function BoardScroller({ className, ...props }: React.HTMLAttributes<HTML
   return (
     <div
       className={cn(
-        'flex min-h-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden p-3',
+        'flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden p-1',
         // A scrollbar that appears on hover shifts the layout; reserve the gutter.
         '[scrollbar-gutter:stable]',
         className,
@@ -59,28 +59,26 @@ export function BoardColumn({
   return (
     <div
       className={cn(
-        'flex w-64 shrink-0 flex-col overflow-hidden rounded-lg',
+        'flex w-72 shrink-0 flex-col overflow-hidden rounded-card',
         'bg-surface-sunken ring-1 ring-inset transition-colors',
         active && 'ring-2 ring-accent',
         blocked && 'ring-2 ring-critical',
-        !active && !blocked && 'ring-border',
+        !active && !blocked && 'ring-hairline-strong',
         className,
       )}
       {...props}
     >
-      <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border px-2.5">
-        <h3 className="truncate text-2xs font-semibold uppercase tracking-wider text-text-secondary">
-          {title}
-        </h3>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {meta ? <span className="text-2xs text-text-muted">{meta}</span> : null}
-          <span className="min-w-4 rounded-sm bg-surface px-1 text-center text-2xs font-medium tabular-nums text-text-secondary ring-1 ring-inset ring-border">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-hairline px-3.5">
+        <h3 className="truncate text-xs font-semibold text-ink">{title}</h3>
+        <div className="flex shrink-0 items-center gap-2">
+          {meta ? <span className="text-2xs text-ink-3">{meta}</span> : null}
+          <span className="min-w-5 rounded-[6px] bg-surface px-1.5 py-0.5 text-center text-2xs font-semibold tabular-nums text-ink-2 ring-1 ring-inset ring-hairline-strong">
             {count}
           </span>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">{children}</div>
     </div>
   );
 }
@@ -103,8 +101,8 @@ export function BoardCard({
   return (
     <article
       className={cn(
-        'flex flex-col gap-1 rounded-md bg-surface p-2 text-left',
-        'ring-1 ring-inset ring-border transition-[opacity,box-shadow]',
+        'flex flex-col gap-1.5 rounded-tile bg-surface p-3 text-left shadow-control',
+        'ring-1 ring-inset ring-hairline transition-[opacity,box-shadow]',
         'focus-within:ring-2 focus-within:ring-ring',
         props.draggable && 'cursor-grab active:cursor-grabbing',
         dragging && 'opacity-40',
@@ -121,7 +119,7 @@ export function BoardCard({
 /** Quiet placeholder for a column with nothing in it. An empty column is fine. */
 export function BoardColumnEmpty({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-md border border-dashed border-border px-2 py-4 text-center text-2xs text-text-muted">
+    <p className="rounded-tile border border-dashed border-hairline-strong px-3 py-5 text-center text-2xs text-ink-3">
       {children}
     </p>
   );

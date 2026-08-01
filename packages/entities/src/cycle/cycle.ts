@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineEntity, auditColumns } from '../shared/entity';
 import { cycleId, type CycleId } from '../shared/ids';
+import { selectionMode, type SelectionMode } from '../selection/selection';
 
 /**
  * An internship cycle: the container everything else hangs off.
@@ -21,8 +22,7 @@ export const CYCLE_STAGES = [
   'allocation', // QSTP scoring startups and assigning tiers
   'positions', // funded startups submitting roles
   'selection', // pools handed over; interviews and selections happening
-  'redistribution', // reclaiming unused hours and re-allocating
-  'onboarding', // documents, verification, contracts
+  'completion', // recovery, redistribution and onboarding run independently here
   'closed',
 ] as const;
 
@@ -46,8 +46,15 @@ export interface Cycle {
   readonly endsOn: string;
   /** Total funded weekly hours. The ceiling every allocation is checked against. */
   readonly fundedWeeklyHours: number;
+  /**
+   * How candidates are won this cycle. One setting for the whole programme:
+   * running two modes at once would mean explaining to a startup why Select
+   * behaved differently on two candidates in the same pool.
+   */
+  readonly selectionMode: SelectionMode;
   /** Deadlines by the stage they close. Drives every reminder and escalation. */
   readonly deadlines: CycleDeadlines;
+  readonly archivedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -56,12 +63,25 @@ export interface CycleDeadlines {
   readonly positionSubmission: string;
   readonly candidateSelection: string;
   readonly documentSubmission: string;
+  /**
+   * When offers stop being open for the candidate to choose between.
+   *
+   * Null under `first_come`, where there are no offers to close — the nullable
+   * type is what says "this cycle does not have one" rather than leaving a date
+   * sitting there meaning nothing.
+   *
+   * It closes *before* `candidateSelection` because what happens next needs
+   * room: the earliest offer is asked whether they still want the candidate,
+   * and that conversation cannot start after selection has already shut.
+   */
+  readonly offerWindow: string | null;
 }
 
 const deadlines = z.object({
   positionSubmission: z.iso.datetime({ offset: true }),
   candidateSelection: z.iso.datetime({ offset: true }),
   documentSubmission: z.iso.datetime({ offset: true }),
+  offerWindow: z.iso.datetime({ offset: true }).nullable().default(null),
 });
 
 export const cycleRow = z.object({
@@ -71,7 +91,9 @@ export const cycleRow = z.object({
   starts_on: z.iso.date(),
   ends_on: z.iso.date(),
   funded_weekly_hours: z.number().int().min(0),
+  selection_mode: selectionMode,
   deadlines,
+  archived_at: z.iso.datetime({ offset: true }).nullable().default(null),
   ...auditColumns,
 });
 
@@ -85,7 +107,9 @@ export const cycleEntity = defineEntity({
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     fundedWeeklyHours: row.funded_weekly_hours,
+    selectionMode: row.selection_mode,
     deadlines: row.deadlines,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }),
@@ -100,6 +124,7 @@ export const createCycleInput = z
       .number()
       .int('Hours must be a whole number.')
       .min(1, 'A cycle needs at least one funded hour.'),
+    selectionMode: selectionMode.default('first_come'),
     deadlines,
   })
   .refine((c) => c.startsOn < c.endsOn, {
@@ -115,6 +140,24 @@ export const createCycleInput = z
   .refine((c) => c.deadlines.candidateSelection < c.deadlines.documentSubmission, {
     message: 'Selection must close before documents are due.',
     path: ['deadlines', 'documentSubmission'],
-  });
+  })
+  .refine((c) => c.selectionMode !== 'candidate_choice' || c.deadlines.offerWindow !== null, {
+    // Without a closing date a candidate sitting on three offers stalls three
+    // startups indefinitely, which is the failure mode the window exists for.
+    message: 'A candidate-choice cycle needs a date for offers to close.',
+    path: ['deadlines', 'offerWindow'],
+  })
+  .refine(
+    (c) =>
+      c.deadlines.offerWindow === null ||
+      (c.deadlines.positionSubmission < c.deadlines.offerWindow &&
+        c.deadlines.offerWindow < c.deadlines.candidateSelection),
+    {
+      // The gap after the window is not slack: it is when the earliest offer is
+      // asked whether they still want the candidate.
+      message: 'Offers must close after positions do, and before selection does.',
+      path: ['deadlines', 'offerWindow'],
+    },
+  );
 
 export type CreateCycleInput = z.infer<typeof createCycleInput>;

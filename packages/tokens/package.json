@@ -6,7 +6,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./css": "./src/tokens.css"
+    "./css": "./src/tokens.css",
+    "./console.css": "./src/console.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

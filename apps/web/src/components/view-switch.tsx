@@ -18,7 +18,7 @@ export interface ViewOption {
 export function ViewSwitch({ options, current }: { options: readonly ViewOption[]; current: string }) {
   return (
     <div
-      className="flex items-center gap-0.5 rounded-md bg-surface-sunken p-0.5 ring-1 ring-inset ring-border"
+      className="flex h-9 items-center gap-0.5 rounded-control border border-hairline-strong bg-panel p-1 shadow-control"
       role="group"
       aria-label="View"
     >
@@ -30,11 +30,11 @@ export function ViewSwitch({ options, current }: { options: readonly ViewOption[
             href={option.href}
             aria-current={active ? 'true' : undefined}
             className={cn(
-              'rounded-sm px-2 py-0.5 text-xs font-medium transition-colors',
+              'rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               active
-                ? 'bg-surface text-text shadow-sm ring-1 ring-inset ring-border'
-                : 'text-text-muted hover:text-text',
+                ? 'bg-brand-soft text-brand'
+                : 'text-ink-3 hover:bg-surface-hover hover:text-ink',
             )}
           >
             {option.label}

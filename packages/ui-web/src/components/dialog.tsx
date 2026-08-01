@@ -17,6 +17,17 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
+/**
+ * Context-preserving workflow panel.
+ *
+ * Unlike DrawerContent, this intentionally renders no overlay. Creation,
+ * editing and record inspection should keep the operational page visible
+ * behind the panel rather than turning it into a modal backdrop.
+ */
+export const SidePanel = DialogPrimitive.Root;
+export const SidePanelTrigger = DialogPrimitive.Trigger;
+export const SidePanelClose = DialogPrimitive.Close;
+
 function Overlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
@@ -52,34 +63,31 @@ export function DialogContent({
         className={cn(
           'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md',
           '-translate-x-1/2 -translate-y-1/2',
-          'rounded-lg bg-surface shadow-lg ring-1 ring-border',
+          'rounded-card border border-hairline bg-surface shadow-overlay',
           'focus:outline-none',
           className,
         )}
         {...props}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-3 py-2.5">
+        <div className="flex items-start justify-between gap-3 border-b border-hairline px-5 py-4">
           <div className="min-w-0">
-            <DialogPrimitive.Title className="text-md font-semibold tracking-tight">
+            <DialogPrimitive.Title className="text-lg font-bold tracking-[-0.01em] text-ink">
               {title}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description
-              className={cn(
-                'mt-0.5 text-sm text-text-secondary',
-                srOnlyDescription && 'sr-only',
-              )}
+              className={cn('mt-1 text-xs text-ink-3', srOnlyDescription && 'sr-only')}
             >
               {description}
             </DialogPrimitive.Description>
           </div>
           <DialogPrimitive.Close
             className={cn(
-              'shrink-0 rounded-sm p-1 text-text-muted transition-colors',
-              'hover:bg-surface-hover hover:text-text',
+              'shrink-0 rounded-control p-1.5 text-ink-3 transition-colors',
+              'hover:bg-surface-hover hover:text-ink',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
           >
-            <X className="size-3.5" />
+            <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         </div>
@@ -91,14 +99,85 @@ export function DialogContent({
 }
 
 export function DialogBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-3 px-3 py-3', className)} {...props} />;
+  return <div className={cn('flex flex-col gap-4 px-5 py-4', className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'flex items-center justify-end gap-1.5 border-t border-border px-3 py-2.5',
+        'flex items-center justify-end gap-2 border-t border-hairline px-5 py-4',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export interface SidePanelContentProps
+  extends React.ComponentProps<typeof DialogPrimitive.Content> {
+  title: string;
+  description: string;
+  width?: 'md' | 'lg' | 'xl' | undefined;
+}
+
+export function SidePanelContent({
+  title,
+  description,
+  width = 'lg',
+  className,
+  children,
+  ...props
+}: SidePanelContentProps) {
+  return (
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Content
+        data-rf-side-panel=""
+        className={cn(
+          'fixed inset-y-0 right-0 z-50 flex w-full flex-col',
+          'border-l border-hairline bg-panel shadow-overlay focus:outline-none',
+          width === 'md' && 'sm:max-w-lg',
+          width === 'lg' && 'sm:max-w-2xl',
+          width === 'xl' && 'sm:max-w-4xl',
+          className,
+        )}
+        {...props}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-hairline px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <DialogPrimitive.Title className="text-title font-bold tracking-[-0.01em] text-ink">
+              {title}
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Description className="mt-1 max-w-2xl text-xs leading-5 text-ink-3">
+              {description}
+            </DialogPrimitive.Description>
+          </div>
+          <DialogPrimitive.Close
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-control text-ink-3',
+              'hover:bg-surface-hover hover:text-ink',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
+          >
+            <X className="size-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        </div>
+        {children}
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  );
+}
+
+export function SidePanelBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6', className)} {...props} />;
+}
+
+export function SidePanelFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-hairline bg-panel px-5 py-4 sm:px-6',
         className,
       )}
       {...props}
@@ -134,9 +213,9 @@ export function DrawerContent({
       <DialogPrimitive.Content
         data-rf-drawer=""
         className={cn(
-          'fixed inset-y-0 z-50 flex w-[min(17rem,85vw)] flex-col',
-          'bg-surface shadow-xl focus:outline-none',
-          side === 'left' ? 'left-0 border-r border-border' : 'right-0 border-l border-border',
+          'fixed inset-y-0 z-50 flex w-[min(var(--rf-rail-w),85vw)] flex-col',
+          'bg-rail shadow-overlay focus:outline-none',
+          side === 'left' ? 'left-0 border-r border-hairline' : 'right-0 border-l border-hairline',
           className,
         )}
         {...props}

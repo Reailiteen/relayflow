@@ -33,7 +33,7 @@ export default async function PositionsPage({
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -52,7 +52,7 @@ export default async function PositionsPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3 pb-0">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="text-sm text-text-muted">
             Submissions closed {date(submissionDeadline)}
@@ -90,7 +90,7 @@ export default async function PositionsPage({
       {board ? (
         <PositionBoard rows={rows} editable={canReview} />
       ) : (
-        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-gap)] pb-10">
           <Panel>
             <PanelHeader
               title="Awaiting review"

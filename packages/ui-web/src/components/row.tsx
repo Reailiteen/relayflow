@@ -11,9 +11,18 @@ import { StatusDot } from './status';
  * dot, kind, subject, detail, chevron — mean the eye can travel straight down
  * one column instead of re-parsing each item's layout.
  *
- * Rows are 32px. That is what makes ten items visible without scrolling, which
- * is the entire point of the density choice.
+ * The kind column carries the tone colour as well as the dot. In a list of
+ * thirty, colour in the word is what you actually read; the dot is the thing
+ * that survives being seen out of the corner of your eye.
  */
+
+const TONE_KIND: Record<StatusTone, string> = {
+  neutral: 'text-ink-2',
+  info: 'text-info',
+  positive: 'text-positive',
+  warning: 'text-warning-text',
+  critical: 'text-critical',
+};
 
 export interface RowProps {
   tone?: StatusTone | undefined;
@@ -48,19 +57,19 @@ export function Row({
     <>
       <StatusDot tone={tone} pulse={pulse} className="mt-[7px]" />
 
-      <span className="w-20 shrink-0 truncate text-xs font-medium text-text-secondary">{kind}</span>
+      <span className={cn('w-24 shrink-0 truncate text-xs font-semibold', TONE_KIND[tone])}>
+        {kind}
+      </span>
 
-      <span className="min-w-0 flex-1 truncate text-base text-text">{subject}</span>
+      <span className="min-w-0 flex-1 truncate text-sm text-ink-3">{subject}</span>
 
-      {detail ? (
-        <span className="shrink-0 text-sm tabular-nums text-text-muted">{detail}</span>
-      ) : null}
+      {detail ? <span className="shrink-0 text-xs tabular-nums text-ink-3">{detail}</span> : null}
 
       {action ? <span className="shrink-0">{action}</span> : null}
 
       {interactive ? (
         <ChevronRight
-          className="size-3.5 shrink-0 text-text-muted transition-transform group-hover:translate-x-0.5"
+          className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5"
           aria-hidden="true"
         />
       ) : null}
@@ -68,11 +77,11 @@ export function Row({
   );
 
   const classes = cn(
-    'group flex w-full items-start gap-2.5 px-3 py-1.5 text-left',
-    'border-b border-border last:border-b-0',
+    'group flex w-full items-start gap-3 px-5 py-2.5 text-left',
+    'border-b border-hairline last:border-b-0',
     interactive &&
       cn(
-        'cursor-pointer hover:bg-surface-hover',
+        'cursor-pointer transition-colors hover:bg-surface-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
       ),
     className,

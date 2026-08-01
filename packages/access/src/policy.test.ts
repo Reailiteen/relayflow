@@ -115,6 +115,7 @@ describe('policy', () => {
       expect(can(supervisor, { capability: 'exception:request', startupId: acme })).toBe(false);
       // But they can still run the interview they were brought in for.
       expect(can(supervisor, { capability: 'interview:schedule', startupId: acme })).toBe(true);
+      expect(can(supervisor, { capability: 'task:assess', startupId: acme })).toBe(true);
     });
 
     it('never grants a startup member QSTP-only capabilities', () => {
@@ -171,6 +172,13 @@ describe('policy', () => {
       ] as const) {
         expect(can(candidate(), { capability })).toBe(false);
       }
+    });
+
+    it('can submit only candidate-owned task and readiness actions', () => {
+      expect(can(candidate(), { capability: 'task:submit_own', candidateId: me })).toBe(true);
+      expect(can(candidate(), { capability: 'placement:confirm_candidate', candidateId: me })).toBe(true);
+      expect(can(candidate(), { capability: 'task:submit_own', candidateId: someoneElse })).toBe(false);
+      expect(can(candidate(), { capability: 'task:read_all' })).toBe(false);
     });
   });
 });

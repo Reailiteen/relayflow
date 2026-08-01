@@ -1,43 +1,72 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { isCandidate } from '@relayflow/access';
-import { getActor } from '@/server/context';
+import { getActor, getContext } from '@/server/context';
+import { AccountMenu } from '@/app/_components/account';
+import { TopBar, Workspace } from '@/app/_components/shell';
 import { CandidateNav } from './_components/nav';
-import { UserMenu } from '../../_components/user-menu';
 
 /**
  * The candidate shell.
  *
- * Deliberately unlike the other two portals: no sidebar, a centred column, and
- * larger type. A candidate is a student on a phone who received one email —
- * they are not navigating a workspace, they are following a thread. The whole
- * portal is four screens and should feel like it.
+ * The same materials as the other two portals — the top bar, the brand lockup,
+ * the account block, the canvas wash, the card system — in a different
+ * arrangement. There is no rail, because a candidate is a student on a phone
+ * who received one email: they are not navigating a workspace, they are
+ * following a thread. Three sections do not earn 248px, so they sit inline and
+ * the content gets a centred column instead.
  */
 export default async function CandidateLayout({ children }: { children: React.ReactNode }) {
   const actor = await getActor();
   if (!isCandidate(actor)) redirect('/signin');
+  const candidate = await (await getContext()).repos.candidates.findById(actor.candidateId);
+  const cycleId = candidate.ok && candidate.data ? candidate.data.cycleId : 'c1c1e000-0000-4000-8000-000000000001';
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-4">
-        <Link href="/candidate" className="flex items-center gap-2">
-          <span className="h-4 w-1 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-md font-semibold tracking-tight">RelayFlow</span>
+    <div className="flex h-dvh flex-col bg-canvas">
+      <TopBar className="pl-5 sm:pl-[30px]">
+        <Link
+          href={`/candidate/cycles/${cycleId}/selection`}
+          className="flex shrink-0 items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-brand-tint"
+            aria-hidden="true"
+          >
+            <span className="text-[15px] leading-none font-bold tracking-[-0.06em] text-brand">
+              RF
+            </span>
+          </span>
+          <span
+            className="hidden text-[22px] leading-none font-bold tracking-[-0.01em] text-ink sm:block"
+            style={{ fontFamily: 'var(--rf-font-wordmark)' }}
+          >
+            RelayFlow
+          </span>
         </Link>
-        <CandidateNav />
+
+        <CandidateNav cycleId={cycleId} />
+
         <div className="ml-auto">
-          <UserMenu name={actor.fullName} />
+          <AccountMenu name={actor.fullName} detail={actor.email} />
         </div>
-      </header>
+      </TopBar>
 
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-5">{children}</main>
+      <Workspace>
+        <div className="mx-auto w-full max-w-3xl px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
+          {children}
+        </div>
 
-      <footer className="border-t border-border px-4 py-3 text-center text-sm text-text-muted">
-        Questions? Email{' '}
-        <a href="mailto:internships@qstp.org.qa" className="text-accent hover:underline">
-          internships@qstp.org.qa
-        </a>
-      </footer>
+        <footer className="px-[var(--rf-page-x)] pb-10 text-center text-label text-ink-3">
+          Questions? Email{' '}
+          <a
+            href="mailto:internships@qstp.org.qa"
+            className="font-medium text-brand hover:underline"
+          >
+            internships@qstp.org.qa
+          </a>
+        </footer>
+      </Workspace>
     </div>
   );
 }

@@ -20,7 +20,7 @@ export default async function ExceptionsPage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -34,7 +34,7 @@ export default async function ExceptionsPage() {
   const canDecide = can(actor, { capability: 'exception:decide' });
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p className="text-sm text-text-muted">
           An approved exception protects the startup&rsquo;s hours from redistribution.

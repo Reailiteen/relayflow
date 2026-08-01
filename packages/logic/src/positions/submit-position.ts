@@ -2,11 +2,14 @@ import { err, forbidden, notFound, ok, validation } from '@relayflow/core';
 import { ANY_STARTUP, authorize, isStartup } from '@relayflow/access';
 import {
   fitsInAllocation,
+  cycleId,
+  effectiveDeadline,
   positionHours,
   remainingStartupHours,
   reservesHours,
   submitPositionInput,
   totalWeeklyHours,
+  redistributionRoundId,
 } from '@relayflow/entities';
 import { defineUseCase, requireActor } from '../use-case';
 
@@ -25,7 +28,7 @@ import { defineUseCase, requireActor } from '../use-case';
 export const submitPosition = defineUseCase({
   name: 'position.submit',
 
-  input: submitPositionInput,
+  input: submitPositionInput.extend({ cycleId, redistributionRoundId: redistributionRoundId.nullable().default(null) }),
 
   authorize: { capability: 'position:submit' as const, startupId: ANY_STARTUP },
 
@@ -42,13 +45,20 @@ export const submitPosition = defineUseCase({
     const scoped = authorize(ctx.actor, { capability: 'position:submit', startupId });
     if (!scoped.ok) return scoped;
 
-    const cycleResult = await ctx.repos.cycles.findActive();
+    const cycleResult = await ctx.repos.cycles.findById(input.cycleId);
     if (!cycleResult.ok) return cycleResult;
     const cycle = cycleResult.data;
-    if (!cycle) return err(notFound('There is no active cycle.'));
+    if (!cycle || cycle.archivedAt) return err(notFound('Cycle not found.'));
+    if (!['positions', 'completion'].includes(cycle.stage)) return err(forbidden('Position submission is not open for this cycle.'));
 
-    const allocationResult = await ctx.repos.allocations.findForStartup(cycle.id, startupId);
+    const [allocationResult, participationResult, exceptionsResult] = await Promise.all([
+      ctx.repos.allocations.findForStartup(cycle.id, startupId),
+      ctx.repos.participation.find(cycle.id, startupId),
+      ctx.repos.exceptions.listForStartup(cycle.id, startupId),
+    ]);
     if (!allocationResult.ok) return allocationResult;
+    if (!participationResult.ok) return participationResult;
+    if (!exceptionsResult.ok) return exceptionsResult;
     const allocation = allocationResult.data;
 
     if (!allocation || allocation.status !== 'confirmed') {
@@ -60,6 +70,27 @@ export const submitPosition = defineUseCase({
           'You have not been allocated hours for this cycle. ' +
             'If hours are redistributed you will be invited to submit roles then.',
         ),
+      );
+    }
+    if (!participationResult.data?.allocationAcknowledgedAt) {
+      return err(
+        forbidden('Acknowledge your published allocation before submitting positions.'),
+      );
+    }
+    if (participationResult.data.status !== 'accepted') return err(forbidden('This startup is not eligible to submit positions.'));
+    let deadline = effectiveDeadline(cycle.deadlines.positionSubmission, exceptionsResult.data, 'position_submission');
+    if (input.redistributionRoundId) {
+      const rounds = await ctx.repos.recovery.listRounds(cycle.id);
+      if (!rounds.ok) return rounds;
+      const round = rounds.data.find((row) => row.id === input.redistributionRoundId);
+      if (!round || !round.invitations.some((row) => row.startupId === startupId && row.status === 'accepted')) {
+        return err(notFound('Redistribution round not found.'));
+      }
+      deadline = round.positionDeadline;
+    }
+    if (ctx.clock.now().toISOString() > deadline) {
+      return err(
+        forbidden('The position submission deadline has passed. Ask QSTP for an extension.'),
       );
     }
 
@@ -91,10 +122,13 @@ export const submitPosition = defineUseCase({
       title: input.title,
       description: input.description,
       requiredSkills: input.requiredSkills,
+      workArrangement: input.workArrangement,
+      additionalRequirements: input.additionalRequirements,
       internCount: input.internCount,
       hoursPerIntern: input.hoursPerIntern,
       durationWeeks: input.durationWeeks,
       supervisorName: input.supervisorName,
+      redistributionRoundId: input.redistributionRoundId,
     });
     if (!created.ok) return created;
 

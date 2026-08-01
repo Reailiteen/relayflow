@@ -30,7 +30,7 @@ export default async function StartupsPage({
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -53,7 +53,7 @@ export default async function StartupsPage({
     // own. Without it the tallest column stretches the page and the "which
     // column is longest" read — the entire reason for a board — is lost.
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3 pb-0">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="text-sm text-text-muted">
             {board
@@ -87,7 +87,7 @@ export default async function StartupsPage({
       </div>
 
       {summaries.length === 0 ? (
-        <div className="mx-auto w-full max-w-[1400px] p-3">
+        <div className="mx-auto w-full max-w-[1600px] px-[var(--rf-page-x)] pt-[var(--rf-gap)] pb-10">
           <Panel>
             <EmptyState>No startups in this cycle.</EmptyState>
           </Panel>
@@ -95,7 +95,7 @@ export default async function StartupsPage({
       ) : board ? (
         <StartupCycleBoard rows={summaries} editable={editable} />
       ) : (
-        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-gap)] pb-10">
           <Panel>
             <PanelHeader
               title="All startups"

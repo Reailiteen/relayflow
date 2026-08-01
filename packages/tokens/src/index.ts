@@ -6,56 +6,62 @@
  *
  * ── The system ───────────────────────────────────────────────────────────────
  * RelayFlow is an operational console. QSTP staff live in it all day, so the
- * interface is near-monochrome and information-dense: colour is a signal, not
- * decoration, and anything coloured should mean something.
+ * interface is near-monochrome: colour is a signal, not decoration, and
+ * anything coloured should mean something.
  *
  * That gives two separate colour jobs, kept deliberately apart:
  *
- *   accent   Qatar maroon. Interactive things — links, focus rings, primary
- *            actions. Deep and desaturated so it never reads as an alarm.
+ *   accent   Violet. Interactive things — links, focus rings, primary actions,
+ *            the selected item in a menu. Never used for state.
  *   status   A louder, independent ramp for state: conflict, overdue, healthy.
  *
  * Collapsing those two into one hue is what makes consoles unreadable — every
  * button starts looking like an error.
+ *
+ * One palette serves all three portals. QSTP staff, startup owners and
+ * candidates see the same components in the same colours; what differs between
+ * the portals is the density and the shape of the navigation, not the system.
  */
 
 export const palette = {
   /**
    * Slate neutrals carry ~95% of the interface. Defined in OKLCH so the
    * lightness steps are perceptually even, which matters when six greys sit
-   * next to each other in a dense table.
+   * next to each other in a dense table. The light end is warmed a few degrees
+   * toward the brand hue so a white card on the page background reads as two
+   * surfaces rather than as a printing error.
    */
   neutral: {
     0: 'oklch(1 0 0)',
-    25: 'oklch(0.992 0.001 265)',
-    50: 'oklch(0.984 0.002 265)',
-    100: 'oklch(0.968 0.003 265)',
-    150: 'oklch(0.948 0.004 265)',
-    200: 'oklch(0.925 0.005 265)',
-    300: 'oklch(0.871 0.007 265)',
-    400: 'oklch(0.708 0.011 265)',
-    500: 'oklch(0.556 0.013 265)',
-    600: 'oklch(0.452 0.013 265)',
-    700: 'oklch(0.372 0.012 265)',
-    800: 'oklch(0.279 0.011 265)',
-    850: 'oklch(0.234 0.010 265)',
-    900: 'oklch(0.197 0.009 265)',
-    950: 'oklch(0.155 0.008 265)',
-    1000: 'oklch(0.118 0.007 265)',
+    25: 'oklch(0.993 0.004 301)',
+    50: 'oklch(0.985 0.007 304)',
+    100: 'oklch(0.972 0.007 295)',
+    150: 'oklch(0.962 0.007 277)',
+    200: 'oklch(0.938 0.009 280)',
+    300: 'oklch(0.887 0.014 277)',
+    400: 'oklch(0.744 0.023 268)',
+    500: 'oklch(0.551 0.023 264)',
+    600: 'oklch(0.453 0.028 267)',
+    700: 'oklch(0.395 0.032 268)',
+    800: 'oklch(0.312 0.034 270)',
+    850: 'oklch(0.273 0.038 271)',
+    900: 'oklch(0.226 0.034 271)',
+    950: 'oklch(0.195 0.031 272)',
+    1000: 'oklch(0.162 0.039 281)',
   },
 
-  /** Qatar Foundation maroon, worked into a usable ramp. */
-  maroon: {
-    50: 'oklch(0.965 0.015 12)',
-    100: 'oklch(0.925 0.035 12)',
-    200: 'oklch(0.855 0.065 12)',
-    300: 'oklch(0.745 0.105 12)',
-    400: 'oklch(0.625 0.140 12)',
-    500: 'oklch(0.512 0.152 12)',
-    600: 'oklch(0.448 0.145 12)',
-    700: 'oklch(0.385 0.125 12)',
-    800: 'oklch(0.315 0.098 12)',
-    900: 'oklch(0.255 0.072 12)',
+  /** The brand violet, worked into a usable ramp. */
+  brand: {
+    50: 'oklch(0.970 0.015 299)',
+    100: 'oklch(0.950 0.026 298)',
+    200: 'oklch(0.886 0.057 298)',
+    300: 'oklch(0.782 0.111 297)',
+    400: 'oklch(0.667 0.172 294)',
+    500: 'oklch(0.565 0.228 291)',
+    600: 'oklch(0.514 0.232 289)',
+    700: 'oklch(0.463 0.221 287)',
+    800: 'oklch(0.390 0.182 287)',
+    900: 'oklch(0.297 0.125 288)',
   },
 
   /**
@@ -66,28 +72,28 @@ export const palette = {
    *   info      in progress, awaiting someone else
    */
   critical: {
-    subtle: 'oklch(0.955 0.022 27)',
-    base: 'oklch(0.585 0.205 27)',
-    strong: 'oklch(0.485 0.185 27)',
-    onSubtle: 'oklch(0.395 0.155 27)',
+    subtle: 'oklch(0.964 0.016 13)',
+    base: 'oklch(0.594 0.223 25)',
+    strong: 'oklch(0.518 0.200 26)',
+    onSubtle: 'oklch(0.467 0.181 26)',
   },
   warning: {
-    subtle: 'oklch(0.965 0.035 78)',
-    base: 'oklch(0.735 0.155 68)',
-    strong: 'oklch(0.605 0.135 62)',
-    onSubtle: 'oklch(0.455 0.098 58)',
+    subtle: 'oklch(0.963 0.022 63)',
+    base: 'oklch(0.722 0.180 53)',
+    strong: 'oklch(0.629 0.161 51)',
+    onSubtle: 'oklch(0.505 0.126 53)',
   },
   positive: {
-    subtle: 'oklch(0.958 0.028 155)',
-    base: 'oklch(0.615 0.135 155)',
-    strong: 'oklch(0.515 0.115 155)',
-    onSubtle: 'oklch(0.405 0.092 155)',
+    subtle: 'oklch(0.953 0.016 161)',
+    base: 'oklch(0.581 0.144 153)',
+    strong: 'oklch(0.501 0.124 153)',
+    onSubtle: 'oklch(0.434 0.106 154)',
   },
   info: {
-    subtle: 'oklch(0.958 0.025 245)',
-    base: 'oklch(0.605 0.135 245)',
-    strong: 'oklch(0.512 0.125 245)',
-    onSubtle: 'oklch(0.412 0.105 245)',
+    subtle: 'oklch(0.949 0.024 288)',
+    base: 'oklch(0.564 0.222 263)',
+    strong: 'oklch(0.476 0.194 263)',
+    onSubtle: 'oklch(0.425 0.164 263)',
   },
 } as const;
 
@@ -112,33 +118,40 @@ export const space = {
   16: 64,
 } as const;
 
-/** Tight radii. Large rounding reads as consumer software and wastes pixels. */
+/**
+ * Radii.
+ *
+ * `md` is the control radius — buttons, inputs, menu items — and `xl` is the
+ * card radius. Those two carry almost everything, and keeping them two clear
+ * steps apart is what stops a button pasted into a card looking like a smaller
+ * card.
+ */
 export const radius = {
   none: 0,
-  sm: 3,
-  md: 5,
-  lg: 7,
-  xl: 10,
+  sm: 4,
+  md: 8,
+  lg: 10,
+  xl: 14,
   full: 9999,
 } as const;
 
 /**
- * Type ramp anchored at 13px rather than 16px.
+ * Type ramp anchored at 14px.
  *
- * This is the single most characteristic decision of a dense console: body copy
- * is small, line height is tight, and the hierarchy is carried by weight and
- * colour rather than by size. Anything below 12px is reserved for non-essential
- * metadata and never for values a decision depends on.
+ * Hierarchy is carried by weight and colour rather than by size — there are
+ * only three steps between body copy and a page title. Anything below 12px is
+ * reserved for non-essential metadata and never for a value a decision depends
+ * on, which is why the ramp stops there.
  */
 export const fontSize = {
-  '2xs': 10,
-  xs: 11,
-  sm: 12,
-  base: 13,
-  md: 14,
-  lg: 16,
-  xl: 19,
-  '2xl': 23,
+  '2xs': 11,
+  xs: 12,
+  sm: 13,
+  base: 14,
+  md: 15,
+  lg: 17,
+  xl: 20,
+  '2xl': 24,
   '3xl': 28,
 } as const;
 
@@ -164,16 +177,18 @@ export const semantic = {
     background: palette.neutral[50],
     surface: palette.neutral[0],
     surfaceSunken: palette.neutral[100],
-    surfaceHover: palette.neutral[100],
-    border: palette.neutral[200],
-    borderStrong: palette.neutral[300],
-    textPrimary: palette.neutral[900],
-    textSecondary: palette.neutral[600],
+    // Hover is the brand at its faintest rather than a grey, so hovering a row
+    // and selecting it are the same colour at two strengths.
+    surfaceHover: palette.brand[50],
+    border: palette.neutral[150],
+    borderStrong: palette.neutral[200],
+    textPrimary: palette.neutral[1000],
+    textSecondary: palette.neutral[700],
     textMuted: palette.neutral[500],
     textInverse: palette.neutral[0],
-    accent: palette.maroon[500],
-    accentHover: palette.maroon[600],
-    accentSubtle: palette.maroon[50],
+    accent: palette.brand[500],
+    accentHover: palette.brand[600],
+    accentSubtle: palette.brand[50],
     accentText: palette.neutral[0],
     critical: palette.critical.base,
     criticalSubtle: palette.critical.subtle,
@@ -199,9 +214,9 @@ export const semantic = {
     textSecondary: palette.neutral[400],
     textMuted: palette.neutral[500],
     textInverse: palette.neutral[1000],
-    accent: palette.maroon[400],
-    accentHover: palette.maroon[300],
-    accentSubtle: palette.maroon[900],
+    accent: palette.brand[400],
+    accentHover: palette.brand[300],
+    accentSubtle: palette.brand[900],
     accentText: palette.neutral[0],
     critical: 'oklch(0.685 0.185 27)',
     criticalSubtle: 'oklch(0.275 0.075 27)',

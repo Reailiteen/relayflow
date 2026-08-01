@@ -357,7 +357,7 @@ export const getStartupPools = defineUseCase({
           const claims = selections.data.filter(
             (s) =>
               s.candidateId === row.candidate.id &&
-              (s.status === 'reserved' || s.status === 'confirmed'),
+              (s.status === 'reserved' || s.status === 'accepted' || s.status === 'confirmed'),
           );
           const ours = claims.find((s) => s.startupId === startupId) ?? null;
 

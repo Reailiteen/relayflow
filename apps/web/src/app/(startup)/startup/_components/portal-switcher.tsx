@@ -34,7 +34,8 @@ export function PortalSwitcher() {
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 rounded-md bg-surface-sunken p-0.5',
+        'hidden h-9 items-center gap-0.5 rounded-control border border-hairline-strong',
+        'bg-panel p-1 shadow-control transition-opacity sm:flex',
         pending && 'opacity-60',
       )}
       title="Development only — switch acting user"
@@ -45,8 +46,9 @@ export function PortalSwitcher() {
           type="button"
           onClick={() => switchTo(persona.key)}
           className={cn(
-            'rounded-sm px-1.5 py-0.5 text-2xs font-medium text-text-muted transition-colors',
-            'hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'rounded-[5px] px-2 py-1 text-2xs font-medium text-ink-3 transition-colors',
+            'hover:bg-surface-hover hover:text-ink',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
         >
           {persona.label}

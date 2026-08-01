@@ -3,7 +3,17 @@ import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { systemClock } from '@relayflow/core';
 import { ANONYMOUS, type MaybeActor } from '@relayflow/access';
-import { createFixtureRepositories, createStore, devActor } from '@relayflow/fixtures';
+import {
+  FIXTURE_SCENARIOS,
+  createFixtureRepositories,
+  createStore,
+  devActor,
+  resetFixtureStore,
+  type FixtureScenario,
+} from '@relayflow/fixtures';
+
+export const FIXTURE_SCENARIO_NAMES = FIXTURE_SCENARIOS;
+export type DevelopmentFixtureScenario = FixtureScenario;
 import { createLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '@relayflow/logic';
 
@@ -49,6 +59,12 @@ export const getActor = cache(async (): Promise<MaybeActor> => {
  * the honest behaviour for something that is explicitly not a database.
  */
 const devStore = createStore();
+
+/** Development-only reset hook used by the fixture scenario selector. */
+export function resetDevelopmentFixtures(scenario: FixtureScenario): void {
+  if (process.env.NODE_ENV === 'production') return;
+  resetFixtureStore(devStore, scenario);
+}
 
 export const getContext = cache(async (): Promise<UseCaseContext> => {
   return {

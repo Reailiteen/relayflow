@@ -69,18 +69,46 @@ than unlikely.
 
 ### Effects
 
+RelayFlow supports three execution policies. The policy belongs to each effect,
+not to the whole rule: one occurrence may send its warning automatically and
+then wait for a programme manager to approve the consequential action.
+
 ```ts
+type ExecutionPolicy =
+  | { kind: 'automatic' }
+  | { kind: 'approval_required'; approverRoles: readonly string[] }
+  | { kind: 'manual_only' };
+
 type Effect =
-  | { kind: 'notify'; template: TemplateId; channels: ChannelPolicy }
-  | { kind: 'reclaim_hours' }
-  | { kind: 'expire_exception' }
-  | { kind: 'escalate'; to: Audience }
-  | { kind: 'flag_for_review' };
+  | {
+      kind: 'notify';
+      execution: { kind: 'automatic' };
+      template: TemplateId;
+      channels: ChannelPolicy;
+    }
+  | { kind: 'reclaim_hours'; execution: ExecutionPolicy }
+  | { kind: 'expire_exception'; execution: ExecutionPolicy }
+  | { kind: 'escalate'; execution: { kind: 'automatic' }; to: Audience }
+  | { kind: 'flag_for_review'; execution: { kind: 'automatic' } };
 ```
 
-Non-communication effects reuse existing use-cases — `reclaimHours` already
-exists in `packages/logic/src/qstp/decisions.ts` and re-checks its own
-preconditions, so an automation firing it cannot do something a human could not.
+The initial boundary is deliberate: RelayFlow may autonomously communicate,
+organise, retry and escalate; it may not autonomously change funding,
+eligibility or candidate placement. Those effects begin as `approval_required`
+or `manual_only` and can be moved individually after QSTP has approved the
+policy and the audit and recovery paths exist.
+
+An `approval_required` effect creates a pending action for an authorised user.
+Approval executes the existing use-case as that user, preserving its capability
+check and precondition re-check. `reclaimHours` in
+`packages/logic/src/qstp/decisions.ts`, for example, remains programme-manager
+work. A `manual_only` effect can identify and link to the appropriate workflow,
+but the engine never executes it.
+
+Automatic domain effects will eventually need a distinct system principal,
+rather than impersonating a user. Enabling one requires an audit record naming
+the rule and occurrence, an idempotent executor, visible failure handling and a
+documented recovery or reversal path.
 
 ### Channels
 
@@ -143,6 +171,25 @@ never retries is worse than not sending.
 **Preferences.** Per user, per category, per channel. Categories rather than
 per-rule, or the settings screen becomes unusable.
 
+**Approval state.** Consequential effects need their own lifecycle, separate
+from notification delivery:
+
+```ts
+type EffectExecutionStatus =
+  | 'pending_approval'
+  | 'approved'
+  | 'executing'
+  | 'completed'
+  | 'declined'
+  | 'cancelled'
+  | 'failed';
+```
+
+Before an approved effect executes, its underlying state and use-case
+preconditions are checked again. If the condition has resolved in the meantime,
+the execution is recorded as `cancelled`, not treated as a failure and not
+retried.
+
 ## Evaluation
 
 Two paths:
@@ -153,6 +200,33 @@ Two paths:
 - **Event dispatch** — `event` triggers fire inline after the use-case commits.
 
 Both must be idempotent, which is what the dedupe key buys.
+
+## Decisions
+
+### All three execution policies are supported
+
+- **Automatic** is for low-risk, repeatable actions such as notifications,
+  delivery retries, escalation and review flags.
+- **Approval required** is for actions RelayFlow can prepare and execute, but
+  only after an authorised person approves that occurrence. Reclaiming funded
+  hours starts here.
+- **Manual only** is for high-judgement actions where RelayFlow may surface the
+  case but must not execute it. Overriding a candidate's choice starts here.
+
+Execution policy is assigned per effect and may be tightened safely at any
+time. Relaxing a policy from `manual_only` to `approval_required`, or from
+`approval_required` to `automatic`, is a policy change: it requires an explicit
+QSTP decision and cannot happen implicitly through a deployment or default.
+
+The users retain distinct responsibilities:
+
+- Programme managers approve funding and other consequential programme actions.
+- Operations manage routine exceptions and delivery failures within their
+  existing capabilities.
+- Startups and candidates receive consistent warnings and remain protected from
+  automatic high-impact changes during the initial phases.
+- Viewers and auditors can inspect the rule, occurrence, approval and execution
+  trail but cannot advance it.
 
 ## Open questions
 
@@ -182,9 +256,9 @@ Both must be idempotent, which is what the dedupe key buys.
 8. **Is there a preview / test send?** Strongly recommended before anything goes
    to real startups, and cheap while the channels are still simulated.
 
-9. **What is the failure policy for a non-communication effect?** If
-   `reclaim_hours` is refused because an exception was approved between
-   evaluation and execution, is that a logged no-op or does it need surfacing?
+9. **Who can change an effect's execution policy?** This should probably be a
+   programme-manager capability, with tightening always allowed and relaxation
+   requiring an explicit confirmation and audit entry.
 
 ## Suggested scope
 
@@ -198,7 +272,9 @@ in-app notification centre with a bell and unread count, delivery record.
 port. Simulated in fixtures exactly as OCR and transcription are today, so the
 whole thing demos without credentials.
 
-**Phase 3 — escalation, digest, preferences, non-communication effects.**
+**Phase 3 — escalation, digest, preferences, approval-required and manual-only
+effects. Automatic domain effects remain disabled until their individual audit,
+failure and recovery requirements are met.**
 
 ## Rules worth shipping with
 

@@ -8,12 +8,13 @@ import { cn } from '../cn';
  * screen, or the interface stops being scannable. They are defined once here
  * and everything else — dots, badges, row accents — reads from this map.
  *
- * Note there is no `primary` tone. Brand maroon is for interactive elements;
- * state gets its own ramp. Mixing them is what makes every row look urgent.
+ * Note there is no `primary` tone. The brand violet is for interactive
+ * elements; state gets its own ramp. Mixing them is what makes every row look
+ * urgent.
  */
 
 const TONE_DOT: Record<StatusTone, string> = {
-  neutral: 'bg-text-muted',
+  neutral: 'bg-ink-3',
   info: 'bg-info',
   positive: 'bg-positive',
   warning: 'bg-warning',
@@ -21,11 +22,11 @@ const TONE_DOT: Record<StatusTone, string> = {
 };
 
 const TONE_BADGE: Record<StatusTone, string> = {
-  neutral: 'bg-surface-sunken text-text-secondary ring-border',
-  info: 'bg-info-subtle text-info-text ring-info/20',
-  positive: 'bg-positive-subtle text-positive-text ring-positive/20',
-  warning: 'bg-warning-subtle text-warning-text ring-warning/25',
-  critical: 'bg-critical-subtle text-critical-text ring-critical/25',
+  neutral: 'bg-surface-sunken text-ink-2 ring-hairline-strong',
+  info: 'bg-info-subtle text-info-text ring-info/15',
+  positive: 'bg-positive-subtle text-positive-text ring-positive/15',
+  warning: 'bg-warning-subtle text-warning-text ring-warning/20',
+  critical: 'bg-critical-subtle text-critical-text ring-critical/20',
 };
 
 export interface StatusDotProps {
@@ -37,7 +38,7 @@ export interface StatusDotProps {
 
 export function StatusDot({ tone, pulse = false, className }: StatusDotProps) {
   return (
-    <span className={cn('relative flex size-1.5 shrink-0', className)} aria-hidden="true">
+    <span className={cn('relative flex size-2 shrink-0', className)} aria-hidden="true">
       {pulse && (
         <span
           className={cn(
@@ -49,7 +50,7 @@ export function StatusDot({ tone, pulse = false, className }: StatusDotProps) {
           )}
         />
       )}
-      <span className={cn('relative inline-flex size-1.5 rounded-full', TONE_DOT[tone])} />
+      <span className={cn('relative inline-flex size-2 rounded-full', TONE_DOT[tone])} />
     </span>
   );
 }
@@ -64,8 +65,11 @@ export function Badge({ tone = 'neutral', children, className }: BadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5',
-        'text-2xs font-medium whitespace-nowrap uppercase tracking-wide',
+        'inline-flex items-center gap-1 rounded-[6px] px-2 py-[3px]',
+        // Uppercase at 10px: callers pass sentence fragments ("over allocation",
+        // "held by Acme") and the caps are what make them read as one chip
+        // rather than as a stray phrase in the middle of a row.
+        'text-[10px] leading-[1.4] font-bold whitespace-nowrap uppercase tracking-[0.04em]',
         // A ring rather than a border: it does not affect layout, so badges
         // never nudge the tight row rhythm out of alignment.
         'ring-1 ring-inset',

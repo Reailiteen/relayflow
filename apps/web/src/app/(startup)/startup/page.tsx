@@ -1,8 +1,18 @@
 import Link from 'next/link';
 import { ArrowRight, CalendarClock, CheckCircle2, TriangleAlert } from 'lucide-react';
 import { getStartupHome } from '@relayflow/logic';
-import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader, cn } from '@relayflow/ui-web';
+import {
+  Badge,
+  Card,
+  EmptyState,
+  Metric,
+  MetricBar,
+  Panel,
+  PanelHeader,
+  cn,
+} from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { PageHeading } from '@/app/_components/shell';
 
 export const metadata = { title: 'Home' };
 
@@ -29,7 +39,7 @@ export default async function StartupHomePage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -42,42 +52,45 @@ export default async function StartupHomePage() {
   const done = nextAction.kind === 'nothing';
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-4xl flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
+      <PageHeading title={home.startupName} meta={home.cycleName} />
+
       {/* One action, told as a sentence. Not a list, because a startup shown
-          five things to do does none of them. */}
-      <section
+          five things to do does none of them. The tint is the only place on
+          this screen where the surface itself carries the state. */}
+      <Card
         className={cn(
-          'flex flex-col gap-3 rounded-lg p-4 ring-1',
+          'gap-5 p-6',
           done
-            ? 'bg-positive-subtle/50 ring-positive/20'
+            ? 'border-positive/20 bg-positive-subtle/60'
             : nextAction.urgent
-              ? 'bg-critical-subtle/60 ring-critical/25'
-              : 'bg-surface ring-border',
+              ? 'border-critical/25 bg-critical-subtle/70'
+              : 'border-brand/15 bg-brand-soft/70',
         )}
       >
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-3">
           {done ? (
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" aria-hidden="true" />
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-positive" aria-hidden="true" />
           ) : nextAction.urgent ? (
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-critical" aria-hidden="true" />
+            <TriangleAlert className="mt-0.5 size-5 shrink-0 text-critical" aria-hidden="true" />
           ) : (
-            <ArrowRight className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />
+            <ArrowRight className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden="true" />
           )}
 
           <div className="min-w-0 flex-1">
-            <div className="text-2xs font-medium uppercase tracking-wider text-text-muted">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-3">
               Your next action
             </div>
-            <h2 className="mt-0.5 text-xl font-semibold tracking-tight">{nextAction.headline}</h2>
-            <p className="mt-1 max-w-prose text-md text-text-secondary">{nextAction.detail}</p>
+            <h2 className="mt-1.5 text-title font-bold tracking-[-0.01em] text-ink">
+              {nextAction.headline}
+            </h2>
+            <p className="mt-2 max-w-prose text-label text-ink-3">{nextAction.detail}</p>
 
             {nextAction.deadline && (
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-text-muted">
-                <CalendarClock className="size-3.5" aria-hidden="true" />
+              <p className="mt-3 flex flex-wrap items-center gap-2 text-meta text-ink-3">
+                <CalendarClock className="size-4" aria-hidden="true" />
                 Selection deadline {date(nextAction.deadline)}
-                {home.hasApprovedException && (
-                  <Badge tone="positive">extension approved</Badge>
-                )}
+                {home.hasApprovedException && <Badge tone="positive">extension approved</Badge>}
                 {home.pendingException && <Badge tone="warning">extension pending</Badge>}
               </p>
             )}
@@ -88,8 +101,8 @@ export default async function StartupHomePage() {
           <Link
             href={nextAction.href}
             className={cn(
-              'inline-flex h-8 w-fit items-center gap-1.5 rounded-md px-3 text-base font-medium',
-              'transition-colors focus-visible:outline-none focus-visible:ring-2',
+              'inline-flex h-9 w-fit items-center gap-2 rounded-control px-4 text-label font-semibold',
+              'shadow-control transition-colors focus-visible:outline-none focus-visible:ring-2',
               'focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
               nextAction.urgent
                 ? 'bg-critical text-white hover:brightness-95'
@@ -97,10 +110,10 @@ export default async function StartupHomePage() {
             )}
           >
             {nextAction.headline}
-            <ArrowRight className="size-3.5" aria-hidden="true" />
+            <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
         )}
-      </section>
+      </Card>
 
       <MetricBar className="lg:grid-cols-4">
         <Metric label="Weekly hours" value={home.allocatedHours} hint="allocated to you" />
@@ -115,15 +128,15 @@ export default async function StartupHomePage() {
 
       <Panel>
         <PanelHeader title="This cycle" aside={<Badge tone="info">{home.cycleName}</Badge>} />
-        <dl className="divide-y divide-border">
+        <dl className="divide-y divide-hairline">
           {[
             ['Positions submitted', String(home.positionCount)],
             ['Candidates awaiting your review', String(home.candidatesAwaitingReview)],
             ['Selection deadline', date(home.selectionDeadline)],
           ].map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between gap-3 px-3 py-2">
-              <dt className="text-base text-text-secondary">{label}</dt>
-              <dd className="shrink-0 text-base font-medium tabular-nums">{value}</dd>
+            <div key={label} className="flex items-center justify-between gap-3 px-5 py-3">
+              <dt className="text-sm text-ink-3">{label}</dt>
+              <dd className="shrink-0 text-sm font-semibold tabular-nums text-ink">{value}</dd>
             </div>
           ))}
         </dl>

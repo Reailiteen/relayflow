@@ -83,7 +83,7 @@ export function NewPositionForm({
           }
         />
 
-        <div className="flex flex-col gap-3 p-3">
+        <div className="flex flex-col gap-4 p-5">
           <TextField
             label="Role title"
             required

@@ -1,0 +1,179 @@
+/**
+ * Console tokens — the shape layer of the RelayFlow web app.
+ *
+ * tokens.css says what things are *coloured*; this file says what they are
+ * *shaped and sized* like, and gives the colour roles the plainer names the
+ * screens are written against. Every repeated radius, shadow, dimension and
+ * type step lives here and nowhere else, so a value that appears in nine places
+ * is still edited in one.
+ *
+ * ── Why this sits beside tokens.css rather than inside it ────────────────────
+ * tokens.css is the cross-platform contract: web CSS variables mirroring the
+ * objects in src/index.ts that React Native reads. Rail widths, card shadows
+ * and a 70px top bar are web chrome, so mirroring them into the native palette
+ * would add a payload the mobile app can never use.
+ *
+ * The colour tokens below are aliases, not second definitions. --rf-brand IS
+ * --rf-accent; naming it twice would be how the two drift apart.
+ */
+
+@layer theme {
+  :root {
+    /* ── Brand ────────────────────────────────────────────────────────────── */
+    --rf-brand: var(--rf-accent);
+    --rf-brand-strong: var(--rf-accent-hover);
+    /* Two tints, and they are not interchangeable: -soft is the selected nav
+       row (sits on the near-white rail), -tint is a badge (sits on canvas). */
+    --rf-brand-soft: var(--rf-accent-subtle);
+    --rf-brand-tint: oklch(0.95 0.026 298);
+
+    /* ── Surfaces ─────────────────────────────────────────────────────────── */
+    --rf-canvas: var(--rf-background);
+    /* The lavender the canvas gradient reaches toward, up in the top right. */
+    --rf-canvas-wash: oklch(0.945 0.032 298);
+    --rf-rail: oklch(0.998 0.002 300);
+    --rf-panel: var(--rf-surface);
+
+    /* ── Ink ──────────────────────────────────────────────────────────────── */
+    /* Three steps, used strictly by role: -ink is headings and figures, -ink-2
+       is the label under a figure, -ink-3 is running text. A dense screen stays
+       readable because those three never swap jobs. */
+    --rf-ink: var(--rf-text-primary);
+    --rf-ink-2: var(--rf-text-secondary);
+    --rf-ink-3: var(--rf-text-muted);
+
+    /* ── Lines ────────────────────────────────────────────────────────────── */
+    --rf-hairline: var(--rf-border);
+    --rf-hairline-strong: var(--rf-border-strong);
+
+    /* ── Status ───────────────────────────────────────────────────────────── */
+    /* Each hue is a pair: the ink, and the tint it sits on. Never mixed across
+       pairs — an orange glyph on a red tint reads as a rendering bug. The first
+       four are the status ramp under plainer names; violet and teal exist only
+       here, for the dashboard's by-category tiles where nothing is wrong and a
+       status colour would be a lie. */
+    --rf-red: var(--rf-critical);
+    --rf-red-tint: var(--rf-critical-subtle);
+    --rf-orange: var(--rf-warning);
+    --rf-orange-tint: var(--rf-warning-subtle);
+    --rf-green: var(--rf-positive);
+    --rf-green-tint: var(--rf-positive-subtle);
+    --rf-blue: var(--rf-info);
+    --rf-blue-tint: var(--rf-info-subtle);
+    --rf-violet: oklch(0.556 0.228 292);
+    --rf-violet-tint: oklch(0.947 0.026 300);
+    --rf-teal: oklch(0.54 0.096 216);
+    --rf-teal-tint: oklch(0.953 0.013 214);
+    /* The donut sits on white at large area, so it carries a lighter green than
+       a 20px glyph would need to stay legible. */
+    --rf-green-chart: oklch(0.622 0.135 155);
+
+    /* ── Radii ────────────────────────────────────────────────────────────── */
+    --rf-r-card: var(--radius-xl);
+    --rf-r-tile: var(--radius-lg);
+    --rf-r-control: var(--radius-md);
+    --rf-r-pill: 999px;
+
+    /* ── Elevation ────────────────────────────────────────────────────────── */
+    /* Barely there on purpose: the cards are separated by the canvas tint, and
+       the shadow only stops a white card dissolving into a white-ish page. */
+    --rf-shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.03);
+    --rf-shadow-control: 0 1px 2px rgb(16 24 40 / 0.05);
+    --rf-shadow-overlay: 0 12px 32px rgb(16 24 40 / 0.12), 0 2px 8px rgb(16 24 40 / 0.06);
+
+    /* ── Layout ───────────────────────────────────────────────────────────── */
+    /* Fixed to the 1536 × 1024 reference. The page padding is a clamp so the
+       target width is exact and narrower windows still breathe. */
+    --rf-rail-w: 248px;
+    --rf-topbar-h: 70px;
+    --rf-page-x: clamp(20px, 3vw, 46px);
+    --rf-page-y: 32px;
+    --rf-gap: 16px;
+    --rf-gap-tile: 18px;
+    --rf-card-pad: 20px;
+    --rf-card-head-h: 66px;
+    --rf-stat-h: 172px;
+    --rf-row-h: 34px;
+
+    /* ── Type ─────────────────────────────────────────────────────────────── */
+    /* Named by role rather than by size, because these are the steps a screen
+       actually reaches for: a page title, a figure, a card heading, a control
+       label, a row, a caption. */
+    --rf-t-display: 28px;
+    --rf-t-stat: 30px;
+    --rf-t-title: 17px;
+    --rf-t-body: 15px;
+    --rf-t-label: 13px;
+    --rf-t-meta: 12px;
+    /* The wordmark only. Everything else is the sans stack. */
+    --rf-font-wordmark: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  }
+
+  /* Light-first by design, but the shell must not become unreadable if the dark
+     class is ever set — so the tints and elevations invert and stop there. */
+  .dark {
+    --rf-brand-tint: oklch(0.297 0.125 288);
+    --rf-canvas-wash: oklch(0.235 0.09 290);
+    --rf-rail: oklch(0.185 0.032 275);
+
+    --rf-violet: oklch(0.7 0.16 292);
+    --rf-violet-tint: oklch(0.29 0.09 296);
+    --rf-teal: oklch(0.7 0.09 216);
+    --rf-teal-tint: oklch(0.27 0.05 214);
+    --rf-green-chart: oklch(0.68 0.13 155);
+
+    --rf-shadow-card: 0 1px 2px rgb(0 0 0 / 0.35);
+    --rf-shadow-control: 0 1px 2px rgb(0 0 0 / 0.35);
+    --rf-shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.5);
+  }
+}
+
+/* Registered with Tailwind so the tokens are reachable as utilities —
+   bg-brand-soft, text-ink-3, rounded-card, shadow-card — instead of every
+   component carrying an arbitrary-value bracket around a var(). */
+@theme inline {
+  --color-brand: var(--rf-brand);
+  --color-brand-strong: var(--rf-brand-strong);
+  --color-brand-soft: var(--rf-brand-soft);
+  --color-brand-tint: var(--rf-brand-tint);
+
+  --color-canvas: var(--rf-canvas);
+  --color-rail: var(--rf-rail);
+  --color-panel: var(--rf-panel);
+
+  --color-ink: var(--rf-ink);
+  --color-ink-2: var(--rf-ink-2);
+  --color-ink-3: var(--rf-ink-3);
+
+  --color-hairline: var(--rf-hairline);
+  --color-hairline-strong: var(--rf-hairline-strong);
+
+  --color-red: var(--rf-red);
+  --color-red-tint: var(--rf-red-tint);
+  --color-orange: var(--rf-orange);
+  --color-orange-tint: var(--rf-orange-tint);
+  --color-green: var(--rf-green);
+  --color-green-tint: var(--rf-green-tint);
+  --color-green-chart: var(--rf-green-chart);
+  --color-blue: var(--rf-blue);
+  --color-blue-tint: var(--rf-blue-tint);
+  --color-violet: var(--rf-violet);
+  --color-violet-tint: var(--rf-violet-tint);
+  --color-teal: var(--rf-teal);
+  --color-teal-tint: var(--rf-teal-tint);
+
+  --radius-card: var(--rf-r-card);
+  --radius-tile: var(--rf-r-tile);
+  --radius-control: var(--rf-r-control);
+
+  --shadow-card: var(--rf-shadow-card);
+  --shadow-control: var(--rf-shadow-control);
+  --shadow-overlay: var(--rf-shadow-overlay);
+
+  --text-display: var(--rf-t-display);
+  --text-stat: var(--rf-t-stat);
+  --text-title: var(--rf-t-title);
+  --text-body: var(--rf-t-body);
+  --text-label: var(--rf-t-label);
+  --text-meta: var(--rf-t-meta);
+}

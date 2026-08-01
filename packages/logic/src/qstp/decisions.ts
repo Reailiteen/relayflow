@@ -170,6 +170,7 @@ export const reclaimHours = defineUseCase({
       overrideReason: 'Hours reclaimed: selection deadline passed with no approved exception.',
       decidedBy: actor.data.userId,
       decidedAt: ctx.clock.now().toISOString(),
+      redistributionRoundId: null,
     });
     if (!updated.ok) return updated;
 
@@ -246,6 +247,7 @@ export const grantHours = defineUseCase({
       overrideReason: null,
       decidedBy: actor.data.userId,
       decidedAt: ctx.clock.now().toISOString(),
+      redistributionRoundId: null,
     });
     if (!granted.ok) return granted;
 

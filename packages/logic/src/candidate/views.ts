@@ -1,7 +1,9 @@
 import { z } from 'zod';
-import { err, notFound, ok } from '@relayflow/core';
+import { err, notFound, ok, type Result } from '@relayflow/core';
 import { isCandidate } from '@relayflow/access';
 import {
+  acceptedOffer,
+  openOffers,
   lowConfidenceFields,
   needsCandidateAction,
   unconfirmedFields,
@@ -93,6 +95,7 @@ export const getCandidateOverview = defineUseCase({
 
     const held =
       selections.data.find((s) => s.status === 'confirmed') ??
+      selections.data.find((s) => s.status === 'accepted') ??
       selections.data.find((s) => s.status === 'reserved') ??
       null;
 
@@ -107,6 +110,11 @@ export const getCandidateOverview = defineUseCase({
 
     const upcoming =
       interviews.data.find((i) => i.status === 'scheduled' || i.status === 'requested') ?? null;
+
+    // Offers awaiting their decision. Not the same as "nobody has picked you":
+    // under candidate-choice the ball is in the candidate's court, and the
+    // placement step below would otherwise tell them the opposite.
+    const waiting = openOffers(selections.data);
 
     const outstanding = documents.data.filter((d) => needsCandidateAction(d.status));
     const rejected = documents.data.filter((d) => d.status === 'rejected');
@@ -167,7 +175,11 @@ export const getCandidateOverview = defineUseCase({
         state: stateFor('placement'),
         summary: placement
           ? `${placement.startup?.name ?? 'A startup'} selected you for ${placement.position?.title ?? 'a role'}.`
-          : 'No startup has selected you yet.',
+          : waiting.length > 1
+            ? `${waiting.length} startups have offered you a role. The choice is yours.`
+            : waiting.length === 1
+              ? 'A startup has offered you a role.'
+              : 'No startup has selected you yet.',
       },
       {
         step: 'documents',
@@ -195,7 +207,14 @@ export const getCandidateOverview = defineUseCase({
     // One action, matching the current step.
     let action: CandidateOverview['action'] = null;
     if (!availabilityDone) action = { label: 'Confirm your availability', href: '/candidate' };
-    else if (currentStep === 'documents' && (outstanding.length > 0 || rejected.length > 0)) {
+    // A pending offer outranks everything below it: it is the only item on this
+    // list that nobody else can do for them, and it is holding up startups.
+    else if (waiting.length > 0) {
+      action = {
+        label: waiting.length > 1 ? 'Choose between your offers' : 'Respond to your offer',
+        href: '/candidate/offers',
+      };
+    } else if (currentStep === 'documents' && (outstanding.length > 0 || rejected.length > 0)) {
       action = {
         label: rejected.length > 0 ? 'Fix your documents' : 'Send your documents',
         href: '/candidate/documents',
@@ -211,6 +230,91 @@ export const getCandidateOverview = defineUseCase({
       upcomingInterview: upcoming,
       documentsOutstanding: outstanding.length,
       documentsRejected: rejected.length,
+    });
+  },
+});
+
+// ─── Offers ──────────────────────────────────────────────────────────────────
+
+export interface CandidateOfferView {
+  readonly selection: Selection;
+  readonly position: Position | null;
+  readonly startup: Startup | null;
+}
+
+export interface CandidateOffersView {
+  readonly offers: readonly CandidateOfferView[];
+  /**
+   * True when there is more than one to weigh up. With a single offer there is
+   * nothing to choose *between*, so the portal asks them to accept or decline
+   * it rather than presenting a decision that does not exist.
+   */
+  readonly isAChoice: boolean;
+  /** Set once they have chosen — the portal then shows the outcome, not a form. */
+  readonly accepted: CandidateOfferView | null;
+  /** When the offers stop being theirs to decide, or null outside this mode. */
+  readonly closesAt: string | null;
+  readonly closed: boolean;
+}
+
+/**
+ * The offers on the table, for the candidate deciding between them.
+ *
+ * They see every startup that offered, because otherwise there is nothing to
+ * choose between — this is the one place the programme deliberately shows a
+ * candidate who else wanted them. The reverse is not true: a startup is told
+ * nothing about its competition.
+ */
+export const getCandidateOffers = defineUseCase({
+  name: 'candidate.offers',
+  input: z.object({}),
+  authorize: { capability: 'selection:read_own_offers' as const },
+
+  execute: async (ctx) => {
+    const candidateId = candidateIdOf(ctx.actor);
+    if (!candidateId) return err(notFound('No candidate record for this account.'));
+
+    const [selections, cycleResult] = await Promise.all([
+      ctx.repos.selections.listForCandidate(candidateId),
+      ctx.repos.cycles.findActive(),
+    ]);
+    if (!selections.ok) return err(selections.error);
+    if (!cycleResult.ok) return err(cycleResult.error);
+
+    const cycle = cycleResult.data;
+    if (!cycle) return err(notFound('There is no active cycle.'));
+
+    const decorate = async (selection: Selection): Promise<Result<CandidateOfferView>> => {
+      const position = await ctx.repos.positions.findById(selection.positionId);
+      if (!position.ok) return err(position.error);
+      const startup = await ctx.repos.startups.findById(selection.startupId);
+      if (!startup.ok) return err(startup.error);
+      return ok({ selection, position: position.data, startup: startup.data });
+    };
+
+    const open: CandidateOfferView[] = [];
+    for (const selection of openOffers(selections.data)) {
+      const view = await decorate(selection);
+      if (!view.ok) return err(view.error);
+      open.push(view.data);
+    }
+
+    const chosen = acceptedOffer(selections.data);
+    let accepted: CandidateOfferView | null = null;
+    if (chosen) {
+      const view = await decorate(chosen);
+      if (!view.ok) return err(view.error);
+      accepted = view.data;
+    }
+
+    const closesAt = cycle.deadlines.offerWindow;
+
+    return ok<CandidateOffersView>({
+      offers: open,
+      isAChoice: open.length > 1,
+      accepted,
+      closesAt,
+      closed: closesAt !== null && ctx.clock.now().toISOString() > closesAt,
     });
   },
 });

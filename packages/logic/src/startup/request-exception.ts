@@ -52,6 +52,14 @@ export const requestException = defineUseCase({
         ? cycle.deadlines.positionSubmission
         : cycle.deadlines.candidateSelection;
 
+    if (ctx.clock.now().toISOString() >= currentDeadline) {
+      return err(
+        conflict('Extension requests must be submitted before the effective deadline.', {
+          context: { kind: input.kind, current: currentDeadline },
+        }),
+      );
+    }
+
     if (input.requestedDeadline <= currentDeadline) {
       return err(
         conflict('The date you asked for is not later than the current deadline.', {

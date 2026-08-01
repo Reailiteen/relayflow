@@ -86,15 +86,21 @@ const T = (iso: string) => iso;
 export const cycle: Cycle = {
   id: ids.cycle,
   name: 'Spring 2026 Internship Cycle',
-  stage: 'redistribution',
+  stage: 'completion',
   startsOn: '2026-02-01',
   endsOn: '2026-08-31',
   fundedWeeklyHours: 500,
+  // The seeded cycle runs the original mode, so the fixtures keep exercising
+  // first-come everywhere. Candidate-choice is covered by its own tests rather
+  // than by rewriting the fixture every screen depends on.
+  selectionMode: 'first_come',
   deadlines: {
     positionSubmission: T('2026-02-28T23:59:00.000Z'),
     candidateSelection: T('2026-03-14T23:59:00.000Z'), // two days ago
     documentSubmission: T('2026-04-04T23:59:00.000Z'),
+    offerWindow: null,
   },
+  archivedAt: null,
   createdAt: T('2026-01-10T08:00:00.000Z'),
   updatedAt: FIXTURE_NOW,
 };
@@ -200,6 +206,9 @@ const allocation = (
   overrideReason: null,
   justification,
   fromRedistribution: false,
+  revision: 1,
+  supersedesAllocationId: null,
+  redistributionRoundId: null,
   decidedBy: ids.qstpManager,
   decidedAt: T('2026-02-10T11:00:00.000Z'),
   createdAt: T('2026-02-10T11:00:00.000Z'),
@@ -239,6 +248,8 @@ const position = (
   title,
   description: `${title} supporting the team's delivery for the Spring 2026 cycle.`,
   requiredSkills: skills,
+  workArrangement: 'hybrid',
+  additionalRequirements: null,
   internCount,
   hoursPerIntern,
   durationWeeks: 12,
@@ -246,6 +257,8 @@ const position = (
   supervisorName,
   status,
   reviewNote: null,
+  reviewHistory: [],
+  redistributionRoundId: null,
   createdAt: T('2026-02-20T09:00:00.000Z'),
   updatedAt: FIXTURE_NOW,
 });
@@ -436,6 +449,8 @@ const selection = (
   candidateId,
   status,
   reservedAt,
+  offeredAt: null,
+  acceptedAt: null,
   confirmedAt: status === 'confirmed' ? T('2026-03-11T10:00:00.000Z') : null,
   releasedAt: null,
   selectedBy,

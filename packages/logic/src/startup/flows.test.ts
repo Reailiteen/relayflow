@@ -94,8 +94,10 @@ describe('startup portal', () => {
   describe('submitting positions', () => {
     it('refuses a role that exceeds the remaining allocation, and says by how much', async () => {
       const store = createStore();
+      store.cycles[0] = { ...store.cycles[0]!, stage: 'positions' };
       // Acme is on 60 hours with 60 already committed.
       const result = await submitPosition(contextFor(DEV_ACTORS.startupOwner(), store), {
+        cycleId: ids.cycle,
         title: 'Extra Engineer',
         description: 'One more pair of hands.',
         requiredSkills: [],
@@ -114,6 +116,7 @@ describe('startup portal', () => {
 
     it('accepts a role that fits and bills it against the allocation', async () => {
       const store = createStore();
+      store.cycles[0] = { ...store.cycles[0]!, stage: 'positions' };
       const ctx = contextFor(DEV_ACTORS.lateStartup(), store); // Northwind: 40h, 40 used
 
       // Free up room first by checking the starting state.
@@ -130,6 +133,7 @@ describe('startup portal', () => {
       }
 
       const result = await submitPosition(ctx, {
+        cycleId: ids.cycle,
         title: 'Junior Analyst',
         description: 'Support the analytics team.',
         requiredSkills: ['SQL'],
@@ -147,6 +151,7 @@ describe('startup portal', () => {
 
     it('is refused for a supervisor, who cannot commit the startup', async () => {
       const result = await submitPosition(contextFor(DEV_ACTORS.supervisor()), {
+        cycleId: ids.cycle,
         title: 'Anything',
         description: 'Anything at all.',
         requiredSkills: [],
@@ -267,7 +272,11 @@ describe('startup portal', () => {
     });
 
     it('accepts a well-formed request', async () => {
-      const result = await requestException(contextFor(DEV_ACTORS.startupOwner()), {
+      const beforeDeadline = {
+        ...contextFor(DEV_ACTORS.startupOwner()),
+        clock: fixedClock('2026-03-10T09:00:00.000Z'),
+      };
+      const result = await requestException(beforeDeadline, {
         kind: 'candidate_selection',
         reason: 'Our supervisor is travelling and cannot complete the final interviews.',
         requestedDeadline: '2026-03-28T23:59:00.000Z',

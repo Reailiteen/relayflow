@@ -8,6 +8,7 @@ export * from './qstp/operations';
 export * from './allocation/decide-allocation';
 export * from './positions/submit-position';
 export * from './selection/select-candidate';
+export * from './selection/accept-offer';
 
 export * from './startup/views';
 export * from './startup/request-exception';
@@ -18,3 +19,4 @@ export * from './candidate/views';
 export * from './candidate/actions';
 
 export * from './board/moves';
+export * from './operations/core-system';

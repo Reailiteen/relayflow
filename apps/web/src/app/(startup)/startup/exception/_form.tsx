@@ -51,7 +51,7 @@ export function ExceptionForm({ currentDeadline }: { currentDeadline: string }) 
     <Panel>
       <PanelHeader title="Request an extension" />
 
-      <div className="flex flex-col gap-3 p-3">
+      <div className="flex flex-col gap-4 p-5">
         <div className="rounded-md bg-warning-subtle px-2.5 py-2 text-sm text-warning-text">
           If the deadline passes without an approved extension, your allocated hours return to the
           programme and are offered to other startups.

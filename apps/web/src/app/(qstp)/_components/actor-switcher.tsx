@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
+import { ChevronDown } from 'lucide-react';
+import type { QstpRole } from '@relayflow/access';
 import { cn } from '@relayflow/ui-web';
 
 /**
@@ -10,6 +12,10 @@ import { cn } from '@relayflow/ui-web';
  * This is here because "does the UI actually respect capabilities?" is a
  * question you have to be able to answer in two seconds, not by editing a
  * cookie by hand. It disappears with the fixtures.
+ *
+ * A native select rather than a segmented control: five personas across the top
+ * bar crowded out the account block, and a select collapses them to the one
+ * that matters — the role currently in force.
  */
 
 const ACTORS = [
@@ -20,7 +26,14 @@ const ACTORS = [
   { key: 'candidate', label: 'Candidate' },
 ] as const;
 
-export function ActorSwitcher({ current }: { current: string }) {
+/** The seeded persona each QSTP role came from, so the select shows it selected. */
+const PERSONA_FOR_ROLE: Record<QstpRole, string> = {
+  program_manager: 'manager',
+  operations: 'operations',
+  viewer: 'auditor',
+};
+
+export function ActorSwitcher({ current }: { current: QstpRole }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -32,27 +45,32 @@ export function ActorSwitcher({ current }: { current: string }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 rounded-md bg-surface-sunken p-0.5',
+        'grid h-9 items-center rounded-control border border-hairline-strong bg-panel',
+        'shadow-control transition-opacity focus-within:ring-2 focus-within:ring-brand',
         pending && 'opacity-60',
       )}
       title="Development only — switch acting user"
     >
-      {ACTORS.map((actor) => (
-        <button
-          key={actor.key}
-          type="button"
-          onClick={() => switchTo(actor.key)}
-          className={cn(
-            'rounded-sm px-1.5 py-0.5 text-2xs font-medium transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            current === actor.key || (current === 'program_manager' && actor.key === 'manager')
-              ? 'bg-surface text-text shadow-sm'
-              : 'text-text-muted hover:text-text',
-          )}
-        >
-          {actor.label}
-        </button>
-      ))}
+      <select
+        aria-label="Acting role"
+        value={PERSONA_FOR_ROLE[current]}
+        onChange={(event) => switchTo(event.target.value)}
+        className={cn(
+          'col-start-1 row-start-1 h-full w-[124px] appearance-none bg-transparent',
+          'pr-8 pl-3.5 text-body font-medium text-ink-2 outline-none',
+        )}
+      >
+        {ACTORS.map((actor) => (
+          <option key={actor.key} value={actor.key}>
+            {actor.label}
+          </option>
+        ))}
+      </select>
+
+      <ChevronDown
+        className="pointer-events-none col-start-1 row-start-1 mr-3 size-4 justify-self-end text-ink-3"
+        aria-hidden="true"
+      />
     </div>
   );
 }

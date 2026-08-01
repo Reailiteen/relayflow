@@ -78,6 +78,7 @@ export const decideAllocation = defineUseCase({
       overrideReason: input.overrideReason,
       decidedBy: actor.data.userId,
       decidedAt: ctx.clock.now().toISOString(),
+      redistributionRoundId: null,
     });
     if (!decided.ok) return decided;
 

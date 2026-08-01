@@ -6,3 +6,5 @@ export * from './components/row';
 export * from './components/dialog';
 export * from './components/field';
 export * from './components/board';
+export * from './components/console';
+export * from './components/chart';

@@ -24,6 +24,8 @@ export const CAPABILITIES = [
   'allocation:read_own',
   'allocation:decide',
   'allocation:override',
+  'allocation:acknowledge',
+  'prioritization:run',
 
   // ── Positions (Stage 2) ──────────────────────────────────────────────────
   'position:read_all',
@@ -43,9 +45,20 @@ export const CAPABILITIES = [
   'interview:schedule',
   'interview:record',
 
+  'task:read_all',
+  'task:assess',
+  'task:submit_own',
+
   'selection:create',
   'selection:read_all',
   'selection:resolve_conflict',
+  /**
+   * Accepting one of your own offers. Candidate-only, and deliberately not a
+   * flavour of `selection:create`: that one commits a *startup*, this one is a
+   * person choosing where they work.
+   */
+  'selection:accept_offer',
+  'selection:read_own_offers',
 
   // ── Exceptions ───────────────────────────────────────────────────────────
   'exception:request',
@@ -61,6 +74,9 @@ export const CAPABILITIES = [
   'document:read_all',
   'document:verify',
   'onboarding:complete',
+  'placement:confirm_candidate',
+  'placement:confirm_startup',
+  'placement:finalize_details',
 
   'report:read',
 ] as const;
@@ -84,11 +100,14 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'allocation:read_all',
     'allocation:decide',
     'allocation:override',
+    'prioritization:run',
     'position:read_all',
     'position:review',
     'candidate:read_all',
     'candidate:import',
     'candidate:share_pool',
+    'task:read_all',
+    'task:assess',
     'selection:read_all',
     'selection:resolve_conflict',
     'exception:read_all',
@@ -97,6 +116,7 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'document:read_all',
     'document:verify',
     'onboarding:complete',
+    'placement:finalize_details',
     'report:read',
   ],
   operations: [
@@ -104,11 +124,14 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'startup:read_all',
     'allocation:read_all',
     'allocation:decide',
+    'prioritization:run',
     'position:read_all',
     'position:review',
     'candidate:read_all',
     'candidate:import',
     'candidate:share_pool',
+    'task:read_all',
+    'task:assess',
     'selection:read_all',
     'selection:resolve_conflict',
     'exception:read_all',
@@ -116,6 +139,7 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'document:read_all',
     'document:verify',
     'onboarding:complete',
+    'placement:finalize_details',
     'report:read',
     // Deliberately absent: cycle setup, allocation overrides, redistribution.
     // Those reshape the programme's budget and stay with the manager.
@@ -126,6 +150,7 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'allocation:read_all',
     'position:read_all',
     'candidate:read_all',
+    'task:read_all',
     'selection:read_all',
     'exception:read_all',
     'document:read_all',
@@ -143,28 +168,34 @@ export const STARTUP_CAPABILITIES: Readonly<Record<StartupRole, readonly Capabil
     'cycle:read',
     'startup:read_own',
     'allocation:read_own',
+    'allocation:acknowledge',
     'position:read_own',
     'position:submit',
     'candidate:read_pool',
     'interview:read_own',
     'interview:schedule',
     'interview:record',
+    'task:assess',
     'selection:create',
     'exception:request',
     'document:read_own',
+    'placement:confirm_startup',
   ],
   member: [
     'cycle:read',
     'startup:read_own',
     'allocation:read_own',
+    'allocation:acknowledge',
     'position:read_own',
     'position:submit',
     'candidate:read_pool',
     'interview:read_own',
     'interview:schedule',
     'interview:record',
+    'task:assess',
     'selection:create',
     'exception:request',
+    'placement:confirm_startup',
   ],
   // A supervisor runs interviews but does not commit the startup to a hire or
   // to a deadline extension.
@@ -176,6 +207,7 @@ export const STARTUP_CAPABILITIES: Readonly<Record<StartupRole, readonly Capabil
     'interview:read_own',
     'interview:schedule',
     'interview:record',
+    'task:assess',
   ],
 };
 
@@ -189,4 +221,10 @@ export const CANDIDATE_CAPABILITIES: readonly Capability[] = [
   'interview:read_own',
   'document:upload_own',
   'document:read_own',
+  // Under candidate-choice the candidate is the one who decides, so this is the
+  // first capability that lets them change something outside their own record.
+  'selection:read_own_offers',
+  'selection:accept_offer',
+  'task:submit_own',
+  'placement:confirm_candidate',
 ];

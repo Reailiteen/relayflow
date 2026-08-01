@@ -32,7 +32,7 @@ export default async function StartupDocumentsPage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -43,7 +43,7 @@ export default async function StartupDocumentsPage() {
   const { interns, documentDeadline } = result.data;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-3xl flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <p className="text-sm text-text-muted">
         Documents are due {date(documentDeadline)}. QSTP verifies them.
       </p>
@@ -69,7 +69,7 @@ export default async function StartupDocumentsPage() {
               }
             />
 
-            <div className="flex flex-col gap-2.5 p-3">
+            <div className="flex flex-col gap-3 p-5">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-secondary">
                 <span className="font-medium text-text">{intern.position?.title ?? 'Role'}</span>
                 <a href={`mailto:${intern.candidate.email}`} className="text-accent hover:underline">

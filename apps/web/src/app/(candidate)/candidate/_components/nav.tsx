@@ -5,21 +5,28 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@relayflow/ui-web';
 
 /**
- * Three links, inline. A candidate portal with a sidebar would be a portal
- * pretending to be bigger than it is.
+ * A handful of links, inline. A candidate portal with a rail would be a portal
+ * pretending to be bigger than it is. Same selected-state colours as the rail
+ * in the other portals, so "where am I" reads identically everywhere.
+ *
+ * Offers sits between interviews and documents because that is the order it
+ * happens in, and it is always present rather than appearing only in
+ * candidate-choice cycles — a link that comes and goes is harder to trust than
+ * one that is sometimes empty.
  */
-const LINKS = [
-  { href: '/candidate', label: 'Overview' },
+const links = (cycleId: string) => [
+  { href: `/candidate/cycles/${cycleId}/selection`, label: 'Journey' },
   { href: '/candidate/interviews', label: 'Interviews' },
-  { href: '/candidate/documents', label: 'Documents' },
+  { href: '/candidate/offers', label: 'Offers' },
+  { href: `/candidate/cycles/${cycleId}/placements`, label: 'Ready to Start' },
 ] as const;
 
-export function CandidateNav() {
+export function CandidateNav({ cycleId }: { cycleId: string }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Sections" className="flex items-center gap-0.5">
-      {LINKS.map((link) => {
+    <nav aria-label="Sections" className="ml-2 flex min-w-0 items-center gap-1 sm:ml-6">
+      {links(cycleId).map((link) => {
         const active = pathname === link.href;
         return (
           <Link
@@ -27,11 +34,11 @@ export function CandidateNav() {
             href={link.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'rounded-md px-2 py-1 text-base transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'rounded-control px-3 py-2 text-label transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
               active
-                ? 'bg-accent-subtle font-medium text-accent'
-                : 'text-text-secondary hover:bg-surface-hover hover:text-text',
+                ? 'bg-brand-soft font-semibold text-brand'
+                : 'font-medium text-ink-2 hover:bg-surface-hover hover:text-ink',
             )}
           >
             {link.label}

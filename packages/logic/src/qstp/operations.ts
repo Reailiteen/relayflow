@@ -149,7 +149,7 @@ export const listStartupSummaries = defineUseCase({
         poolSize: theirPool.length,
         poolReviewed: theirPool.filter((row) => row.entry.status !== 'pending').length,
         activeSelections: theirSelections.filter(
-          (s) => s.status === 'reserved' || s.status === 'confirmed',
+          (s) => s.status === 'reserved' || s.status === 'accepted' || s.status === 'confirmed',
         ).length,
         confirmedSelections: theirSelections.filter((s) => s.status === 'confirmed').length,
         documentsTotal: documents.length,
@@ -451,7 +451,7 @@ export const getCandidateAdminView = defineUseCase({
         selections.data.find(
           (s) =>
             s.candidateId === candidate.id &&
-            (s.status === 'reserved' || s.status === 'confirmed'),
+            (s.status === 'reserved' || s.status === 'accepted' || s.status === 'confirmed'),
         ) ?? null;
 
       const pools = poolsByCandidate.get(candidate.id) ?? [];
@@ -462,7 +462,7 @@ export const getCandidateAdminView = defineUseCase({
         poolCount: pools.length,
         poolsEngaged: engaged,
         hasCompletedInterview: interviewedIds.has(candidate.id),
-        hasActiveSelection: held?.status === 'reserved',
+        hasActiveSelection: held?.status === 'reserved' || held?.status === 'accepted',
         hasConfirmedSelection: held?.status === 'confirmed',
       };
 

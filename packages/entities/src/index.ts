@@ -11,3 +11,4 @@ export * from './selection/selection';
 export * from './selection/exception';
 export * from './onboarding/document';
 export * from './board/board';
+export * from './operations/operations';

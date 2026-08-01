@@ -10,55 +10,57 @@
 @layer theme {
   :root {
     /* ── RelayFlow semantic tokens (light) ───────────────────────────────── */
-    --rf-background: oklch(0.984 0.002 265);
+    --rf-background: oklch(0.985 0.007 304);
     --rf-surface: oklch(1 0 0);
-    --rf-surface-sunken: oklch(0.968 0.003 265);
-    --rf-surface-hover: oklch(0.968 0.003 265);
-    --rf-border: oklch(0.925 0.005 265);
-    --rf-border-strong: oklch(0.871 0.007 265);
-    --rf-text-primary: oklch(0.197 0.009 265);
-    --rf-text-secondary: oklch(0.452 0.013 265);
-    --rf-text-muted: oklch(0.556 0.013 265);
+    --rf-surface-sunken: oklch(0.972 0.007 295);
+    /* Hover is the brand at its faintest rather than a grey, so hovering a row
+       and selecting it are the same colour at two strengths. */
+    --rf-surface-hover: oklch(0.97 0.015 299);
+    --rf-border: oklch(0.962 0.007 277);
+    --rf-border-strong: oklch(0.938 0.009 280);
+    --rf-text-primary: oklch(0.162 0.039 281);
+    --rf-text-secondary: oklch(0.395 0.032 268);
+    --rf-text-muted: oklch(0.551 0.023 264);
     --rf-text-inverse: oklch(1 0 0);
 
     /* Brand: interactive things only. Never state. */
-    --rf-accent: oklch(0.512 0.152 12);
-    --rf-accent-hover: oklch(0.448 0.145 12);
-    --rf-accent-subtle: oklch(0.965 0.015 12);
+    --rf-accent: oklch(0.565 0.228 291);
+    --rf-accent-hover: oklch(0.514 0.232 289);
+    --rf-accent-subtle: oklch(0.97 0.015 299);
     --rf-accent-text: oklch(1 0 0);
 
     /* State: independent of brand, so a button never reads as an alarm. */
-    --rf-critical: oklch(0.585 0.205 27);
-    --rf-critical-subtle: oklch(0.955 0.022 27);
-    --rf-critical-text: oklch(0.395 0.155 27);
-    --rf-warning: oklch(0.735 0.155 68);
-    --rf-warning-subtle: oklch(0.965 0.035 78);
-    --rf-warning-text: oklch(0.455 0.098 58);
-    --rf-positive: oklch(0.615 0.135 155);
-    --rf-positive-subtle: oklch(0.958 0.028 155);
-    --rf-positive-text: oklch(0.405 0.092 155);
-    --rf-info: oklch(0.605 0.135 245);
-    --rf-info-subtle: oklch(0.958 0.025 245);
-    --rf-info-text: oklch(0.412 0.105 245);
+    --rf-critical: oklch(0.594 0.223 25);
+    --rf-critical-subtle: oklch(0.964 0.016 13);
+    --rf-critical-text: oklch(0.467 0.181 26);
+    --rf-warning: oklch(0.722 0.18 53);
+    --rf-warning-subtle: oklch(0.963 0.022 63);
+    --rf-warning-text: oklch(0.505 0.126 53);
+    --rf-positive: oklch(0.581 0.144 153);
+    --rf-positive-subtle: oklch(0.953 0.016 161);
+    --rf-positive-text: oklch(0.434 0.106 154);
+    --rf-info: oklch(0.564 0.222 263);
+    --rf-info-subtle: oklch(0.949 0.024 288);
+    --rf-info-text: oklch(0.425 0.164 263);
 
-    --radius: 5px;
+    --radius: 8px;
   }
 
   .dark {
-    --rf-background: oklch(0.118 0.007 265);
-    --rf-surface: oklch(0.155 0.008 265);
-    --rf-surface-sunken: oklch(0.118 0.007 265);
-    --rf-surface-hover: oklch(0.197 0.009 265);
-    --rf-border: oklch(0.234 0.01 265);
-    --rf-border-strong: oklch(0.279 0.011 265);
-    --rf-text-primary: oklch(0.968 0.003 265);
-    --rf-text-secondary: oklch(0.708 0.011 265);
-    --rf-text-muted: oklch(0.556 0.013 265);
-    --rf-text-inverse: oklch(0.118 0.007 265);
+    --rf-background: oklch(0.162 0.039 281);
+    --rf-surface: oklch(0.195 0.031 272);
+    --rf-surface-sunken: oklch(0.162 0.039 281);
+    --rf-surface-hover: oklch(0.226 0.034 271);
+    --rf-border: oklch(0.273 0.038 271);
+    --rf-border-strong: oklch(0.312 0.034 270);
+    --rf-text-primary: oklch(0.972 0.007 295);
+    --rf-text-secondary: oklch(0.744 0.023 268);
+    --rf-text-muted: oklch(0.551 0.023 264);
+    --rf-text-inverse: oklch(0.162 0.039 281);
 
-    --rf-accent: oklch(0.625 0.14 12);
-    --rf-accent-hover: oklch(0.745 0.105 12);
-    --rf-accent-subtle: oklch(0.255 0.072 12);
+    --rf-accent: oklch(0.667 0.172 294);
+    --rf-accent-hover: oklch(0.782 0.111 297);
+    --rf-accent-subtle: oklch(0.297 0.125 288);
     --rf-accent-text: oklch(1 0 0);
 
     --rf-critical: oklch(0.685 0.185 27);
@@ -70,9 +72,9 @@
     --rf-positive: oklch(0.705 0.135 155);
     --rf-positive-subtle: oklch(0.265 0.062 155);
     --rf-positive-text: oklch(0.845 0.098 155);
-    --rf-info: oklch(0.695 0.125 245);
-    --rf-info-subtle: oklch(0.265 0.062 245);
-    --rf-info-text: oklch(0.845 0.085 245);
+    --rf-info: oklch(0.695 0.125 263);
+    --rf-info-subtle: oklch(0.265 0.062 288);
+    --rf-info-text: oklch(0.845 0.085 263);
   }
 }
 
@@ -125,21 +127,23 @@
   --color-input: var(--rf-border);
   --color-ring: var(--rf-accent);
 
-  /* Console type ramp: anchored at 13px, tighter than Tailwind's default. */
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 19px;
-  --text-2xl: 23px;
+  /* Console type ramp: anchored at 14px, tighter than Tailwind's default. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
   --text-3xl: 28px;
 
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 7px;
-  --radius-xl: 10px;
+  /* md is the control radius, xl the card radius. Everything else is one of
+     those two rounded off — see the note in src/index.ts. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 
   --font-sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;

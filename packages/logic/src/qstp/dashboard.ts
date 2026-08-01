@@ -1,13 +1,17 @@
 import { z } from 'zod';
 import { err, ok } from '@relayflow/core';
 import {
+  blocksOthers,
   budgetView,
   effectiveDeadline,
   hasConflict,
   isProtected,
   reservesHours,
+  stageIndex,
   totalWeeklyHours,
   type BudgetView,
+  type Cycle,
+  type CycleStage,
   type Startup,
   type StartupId,
   type CandidateId,
@@ -44,6 +48,63 @@ export interface AttentionItem {
   readonly severity: number;
 }
 
+/**
+ * A phase of the cycle, as the dashboard timeline shows it.
+ *
+ * Derived from the cycle's own stage and deadlines rather than stored, so it
+ * cannot disagree with the rest of the screen. The four milestones are coarser
+ * than CYCLE_STAGES on purpose: `redistribution` is not a phase a programme
+ * manager plans around, it is what happens while selection is being closed out,
+ * so it reads as part of Selections.
+ */
+export interface CycleMilestone {
+  readonly key: 'planning' | 'positions' | 'selection' | 'onboarding';
+  readonly label: string;
+  /** ISO instants. Formatting is the caller's business. */
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly status: 'complete' | 'active' | 'upcoming';
+}
+
+/** Which cycle stages each milestone covers. Order is the timeline's order. */
+const MILESTONE_STAGES: readonly {
+  key: CycleMilestone['key'];
+  label: string;
+  stages: readonly CycleStage[];
+}[] = [
+  { key: 'planning', label: 'Planning', stages: ['draft', 'allocation'] },
+  { key: 'positions', label: 'Position Posting', stages: ['positions'] },
+  { key: 'selection', label: 'Selections', stages: ['selection'] },
+  { key: 'onboarding', label: 'Completion', stages: ['completion', 'closed'] },
+];
+
+function milestonesFor(cycle: Cycle): CycleMilestone[] {
+  // Each milestone runs from where the previous one ended to its own deadline,
+  // so the four spans tile the cycle with no gaps to explain.
+  const bounds: Record<CycleMilestone['key'], [string, string]> = {
+    planning: [cycle.createdAt, cycle.startsOn],
+    positions: [cycle.startsOn, cycle.deadlines.positionSubmission],
+    selection: [cycle.deadlines.positionSubmission, cycle.deadlines.candidateSelection],
+    onboarding: [cycle.deadlines.candidateSelection, cycle.deadlines.documentSubmission],
+  };
+
+  const current = stageIndex(cycle.stage);
+
+  return MILESTONE_STAGES.map(({ key, label, stages }) => {
+    const first = stageIndex(stages[0]!);
+    const last = stageIndex(stages[stages.length - 1]!);
+    const [startsAt, endsAt] = bounds[key];
+
+    return {
+      key,
+      label,
+      startsAt,
+      endsAt,
+      status: current > last ? 'complete' : current >= first ? 'active' : 'upcoming',
+    };
+  });
+}
+
 export interface QstpDashboard {
   readonly cycleName: string;
   readonly stage: string;
@@ -54,6 +115,8 @@ export interface QstpDashboard {
   /** Reclaimable weekly hours, if redistribution ran right now. */
   readonly reclaimableHours: number;
   readonly attention: readonly AttentionItem[];
+  /** The cycle's four phases, in order. Empty when there is no active cycle. */
+  readonly milestones: readonly CycleMilestone[];
 }
 
 export const getQstpDashboard = defineUseCase({
@@ -80,6 +143,7 @@ export const getQstpDashboard = defineUseCase({
         candidatesOnboarding: 0,
         reclaimableHours: 0,
         attention: [],
+        milestones: [],
       });
     }
 
@@ -108,10 +172,13 @@ export const getQstpDashboard = defineUseCase({
     const allocated = confirmed.reduce((total, a) => total + a.weeklyHours, 0);
 
     // Committed = hours on positions that actually have someone reserved.
+    //
+    // `blocksOthers` rather than a status list written out here: an offer is
+    // interest, not a commitment, and three startups offering the same person
+    // must not each count those hours or the budget triple-counts. Asking the
+    // invariant is what keeps this true as statuses are added.
     const heldPositionIds = new Set(
-      selections.data
-        .filter((s) => s.status === 'reserved' || s.status === 'confirmed')
-        .map((s) => s.positionId),
+      selections.data.filter((s) => blocksOthers(s.status)).map((s) => s.positionId),
     );
     const committed = positions.data
       .filter((p) => reservesHours(p.status) && heldPositionIds.has(p.id))
@@ -238,12 +305,13 @@ export const getQstpDashboard = defineUseCase({
       stage: cycle.stage,
       budget,
       startupCount: startups.data.length,
-      pendingSelections: selections.data.filter((s) => s.status === 'reserved').length,
+      pendingSelections: selections.data.filter((s) => s.status === 'reserved' || s.status === 'accepted').length,
       candidatesOnboarding: new Set(
         selections.data.filter((s) => s.status === 'confirmed').map((s) => s.candidateId),
       ).size,
       reclaimableHours,
       attention: attention.sort((a, b) => b.severity - a.severity),
+      milestones: milestonesFor(cycle),
     });
   },
 });

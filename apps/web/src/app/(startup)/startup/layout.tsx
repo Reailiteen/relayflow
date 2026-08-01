@@ -2,14 +2,21 @@ import { redirect } from 'next/navigation';
 import { isStartup } from '@relayflow/access';
 import { getStartupHome } from '@relayflow/logic';
 import { getActor, getContext } from '@/server/context';
-import { StartupHeading, StartupSidebar } from './_components/nav';
+import { RailProvider } from '@/app/_components/rail';
+import { AccountMenu, Notifications } from '@/app/_components/account';
+import { TopBar, Workspace } from '@/app/_components/shell';
+import { StartupHeading, StartupNavToggle, StartupSidebar } from './_components/nav';
 import { PortalSwitcher } from './_components/portal-switcher';
-import { UserMenu } from '../../_components/user-menu';
 
 /**
  * The startup shell.
  *
- * As with QSTP, the redirect is convenience rather than security — the real
+ * The same furniture as QSTP — rail, 70px top bar, account block — because a
+ * startup owner who has been walked through the QSTP screens should not have to
+ * learn a second interface. What differs is the section list and the fact that
+ * everything here is scoped to one company.
+ *
+ * As with QSTP, the redirect is convenience rather than security: the real
  * protection is in the use-cases, which authorize on every call regardless of
  * the route taken.
  */
@@ -20,22 +27,34 @@ export default async function StartupLayout({ children }: { children: React.Reac
   const ctx = await getContext();
   const home = await getStartupHome(ctx, {});
   const startupName = home.ok ? home.data.startupName : 'Your startup';
+  const activeCycle = await ctx.repos.cycles.findActive();
+  const cycleId = activeCycle.ok && activeCycle.data ? activeCycle.data.id : 'c1c1e000-0000-4000-8000-000000000001';
+
+  // The bell counts what is genuinely sitting in this startup's court: people
+  // to review and interviews to run. The single "next action" is not added to
+  // it — that is a recommendation about the same work, not more work.
+  const waiting = home.ok ? home.data.candidatesAwaitingReview + home.data.interviewsPending : 0;
 
   return (
-    <div className="flex h-dvh bg-background">
-      <StartupSidebar startupName={startupName} />
+    <RailProvider>
+      <div className="flex h-dvh bg-canvas">
+        <StartupSidebar startupName={startupName} cycleId={cycleId} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-          <StartupHeading />
-          <div className="ml-auto flex items-center gap-2">
-            <PortalSwitcher />
-            <UserMenu name={actor.fullName} role={startupName} />
-          </div>
-        </header>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar>
+            <StartupNavToggle startupName={startupName} cycleId={cycleId} />
+            <StartupHeading cycleId={cycleId} />
 
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+            <div className="ml-auto flex items-center gap-4">
+              <PortalSwitcher />
+              <Notifications count={waiting} />
+              <AccountMenu name={actor.fullName} detail={startupName} />
+            </div>
+          </TopBar>
+
+          <Workspace>{children}</Workspace>
+        </div>
       </div>
-    </div>
+    </RailProvider>
   );
 }

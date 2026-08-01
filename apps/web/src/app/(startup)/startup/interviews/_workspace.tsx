@@ -89,7 +89,7 @@ export function InterviewWorkspace({ view }: { view: StartupInterviewView }) {
         }
       />
 
-      <div className="flex flex-col gap-3 p-3">
+      <div className="flex flex-col gap-4 p-5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-secondary">
           <span className="font-medium text-text">{position?.title ?? 'Role'}</span>
           {interview.scheduledFor && (

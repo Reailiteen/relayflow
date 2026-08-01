@@ -4,6 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
+  acceptOffer,
+  assignTask,
+  respondToSelection,
   confirmAvailability,
   confirmDocumentFields,
   decideAllocation,
@@ -25,9 +28,43 @@ import {
   submitPosition,
   uploadDocument,
   verifyDocument,
+  acknowledgeAllocation,
+  archiveCycle,
+  advanceCycleStage,
+  cancelPlacement,
+  closeRedistributionRound,
+  confirmPlacement,
+  createCycle,
+  confirmRecovery,
+  createRedistributionRound,
+  decideRequirement,
+  finalizePlacement,
+  inviteRedistribution,
+  openCandidateChoiceFallback,
+  overrideCandidateChoice,
+  protectRecovery,
+  publishAllocations,
+  runPrioritization,
+  setPlacementReadiness,
+  saveParticipation,
+  saveRequirementTemplate,
+  saveTaskTemplate,
+  signPlacementAgreement,
+  submitRequirement,
+  submitTask,
+  reviewTask,
+  resolveSelectionConflict,
+  respondCandidateChoiceFallback,
+  respondRedistributionInvitation,
+  transitionPosition,
+  updateCycle,
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
-import { DEV_ACTOR_COOKIE } from './context';
+import {
+  DEV_ACTOR_COOKIE,
+  FIXTURE_SCENARIO_NAMES,
+  resetDevelopmentFixtures,
+} from './context';
 import { accountForEmail, accountForPersona } from './auth';
 
 /**
@@ -70,6 +107,18 @@ export async function grantHoursAction(input: unknown) {
 
 export async function selectCandidateAction(input: unknown) {
   return revalidate(await action(selectCandidate)(input));
+}
+
+/**
+ * The candidate choosing where they work. Declining the other offers happens
+ * inside the same write, so there is no second action to forget to call.
+ */
+export async function acceptOfferAction(input: unknown) {
+  return revalidate(await action(acceptOffer)(input));
+}
+
+export async function respondToSelectionAction(input: unknown) {
+  return revalidate(await action(respondToSelection)(input));
 }
 
 export async function submitPositionAction(input: unknown) {
@@ -130,6 +179,139 @@ export async function confirmDocumentFieldsAction(input: unknown) {
 
 export async function verifyDocumentAction(input: unknown) {
   return revalidate(await action(verifyDocument)(input));
+}
+
+export async function acknowledgeAllocationAction(input: unknown) {
+  return revalidate(await action(acknowledgeAllocation)(input));
+}
+
+export async function saveParticipationAction(input: unknown) {
+  return revalidate(await action(saveParticipation)(input));
+}
+
+export async function createCycleAction(input: unknown) {
+  return revalidate(await action(createCycle)(input));
+}
+
+export async function updateCycleAction(input: unknown) {
+  return revalidate(await action(updateCycle)(input));
+}
+
+export async function archiveCycleAction(input: unknown) {
+  return revalidate(await action(archiveCycle)(input));
+}
+
+export async function runPrioritizationAction(input: unknown) {
+  return revalidate(await action(runPrioritization)(input));
+}
+
+export async function publishAllocationsAction(input: unknown) {
+  return revalidate(await action(publishAllocations)(input));
+}
+
+export async function advanceCycleStageAction(input: unknown) {
+  return revalidate(await action(advanceCycleStage)(input));
+}
+
+export async function transitionPositionAction(input: unknown) {
+  return revalidate(await action(transitionPosition)(input));
+}
+
+export async function setPlacementReadinessAction(input: unknown) {
+  return revalidate(await action(setPlacementReadiness)(input));
+}
+
+export async function finalizePlacementAction(input: unknown) {
+  return revalidate(await action(finalizePlacement)(input));
+}
+
+export async function confirmPlacementAction(input: unknown) {
+  return revalidate(await action(confirmPlacement)(input));
+}
+
+export async function cancelPlacementAction(input: unknown) {
+  return revalidate(await action(cancelPlacement)(input));
+}
+
+export async function confirmRecoveryAction(input: unknown) {
+  return revalidate(await action(confirmRecovery)(input));
+}
+
+export async function createRedistributionRoundAction(input: unknown) {
+  return revalidate(await action(createRedistributionRound)(input));
+}
+
+export async function inviteRedistributionAction(input: unknown) {
+  return revalidate(await action(inviteRedistribution)(input));
+}
+
+export async function openCandidateChoiceFallbackAction(input: unknown) {
+  return revalidate(await action(openCandidateChoiceFallback)(input));
+}
+
+export async function respondCandidateChoiceFallbackAction(input: unknown) {
+  return revalidate(await action(respondCandidateChoiceFallback)(input));
+}
+
+export async function overrideCandidateChoiceAction(input: unknown) {
+  return revalidate(await action(overrideCandidateChoice)(input));
+}
+
+export async function saveTaskTemplateAction(input: unknown) {
+  return revalidate(await action(saveTaskTemplate)(input));
+}
+
+export async function assignTaskAction(input: unknown) {
+  return revalidate(await action(assignTask)(input));
+}
+
+export async function submitTaskAction(input: unknown) {
+  return revalidate(await action(submitTask)(input));
+}
+
+export async function reviewTaskAction(input: unknown) {
+  return revalidate(await action(reviewTask)(input));
+}
+
+export async function saveRequirementTemplateAction(input: unknown) {
+  return revalidate(await action(saveRequirementTemplate)(input));
+}
+
+export async function submitRequirementAction(input: unknown) {
+  return revalidate(await action(submitRequirement)(input));
+}
+
+export async function decideRequirementAction(input: unknown) {
+  return revalidate(await action(decideRequirement)(input));
+}
+
+export async function signPlacementAgreementAction(input: unknown) {
+  return revalidate(await action(signPlacementAgreement)(input));
+}
+
+export async function protectRecoveryAction(input: unknown) {
+  return revalidate(await action(protectRecovery)(input));
+}
+
+export async function respondRedistributionInvitationAction(input: unknown) {
+  return revalidate(await action(respondRedistributionInvitation)(input));
+}
+
+export async function closeRedistributionRoundAction(input: unknown) {
+  return revalidate(await action(closeRedistributionRound)(input));
+}
+
+export async function resolveSelectionConflictAction(input: unknown) {
+  return revalidate(await action(resolveSelectionConflict)(input));
+}
+
+export async function resetFixtureScenarioAction(formData: FormData) {
+  if (process.env.NODE_ENV === 'production') return;
+  const raw = formData.get('scenario');
+  const scenario = FIXTURE_SCENARIO_NAMES.find((item) => item === raw);
+  if (!scenario) return;
+  await Promise.resolve(resetDevelopmentFixtures(scenario));
+  revalidatePath('/', 'layout');
 }
 
 /**

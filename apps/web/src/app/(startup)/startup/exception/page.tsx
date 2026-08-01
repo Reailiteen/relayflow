@@ -26,7 +26,7 @@ export default async function StartupExceptionPage() {
 
   if (!result.ok) {
     return (
-      <div className="p-3">
+      <div className="px-[var(--rf-page-x)] pt-[var(--rf-page-y)]">
         <Panel>
           <EmptyState>{result.error.message}</EmptyState>
         </Panel>
@@ -41,7 +41,7 @@ export default async function StartupExceptionPage() {
   );
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-3 p-3">
+    <div className="mx-auto flex max-w-2xl flex-col gap-[var(--rf-gap)] px-[var(--rf-page-x)] pt-[var(--rf-page-y)] pb-10">
       <Panel>
         <PanelHeader
           title="Your selection deadline"
