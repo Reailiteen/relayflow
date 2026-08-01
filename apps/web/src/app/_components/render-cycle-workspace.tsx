@@ -3,21 +3,17 @@ import { cycleId } from '@relayflow/entities';
 import { getCycleWorkspace } from '@relayflow/logic';
 import { EmptyState, Panel } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
-import { CycleWorkspaceView, type Portal, type Workspace } from './cycle-workspace';
-
-const WORKSPACES: readonly Workspace[] = [
-  'allocation',
-  'positions',
-  'selection',
-  'recovery',
-  'placements',
-  'activity',
-];
+import { CycleWorkspaceView, PORTAL_WORKSPACES, type Portal, type Workspace } from './cycle-workspace';
 
 export async function renderCycleWorkspace(cycle: string, workspace: string, portal: Portal) {
   const parsedCycle = cycleId.safeParse(cycle);
-  if (!parsedCycle.success || !WORKSPACES.includes(workspace as Workspace)) notFound();
-  if (portal !== 'qstp' && (workspace === 'recovery' || workspace === 'activity')) notFound();
+  // One list, shared with the nav, so a tab can never point at a route that
+  // 404s and a guessed URL can never reach a workspace the nav hides. The old
+  // pair of checks had drifted: the startup nav rendered a Recovery tab that the
+  // route then refused.
+  if (!parsedCycle.success || !PORTAL_WORKSPACES[portal].includes(workspace as Workspace)) {
+    notFound();
+  }
 
   const result = await getCycleWorkspace(await getContext(), { cycleId: parsedCycle.data });
   if (!result.ok) {

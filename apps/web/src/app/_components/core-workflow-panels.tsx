@@ -1000,7 +1000,13 @@ export function InterviewWorkflowPanel({
               />
             </div>
           ) : null}
-          {interview.aiSummary ? (
+          {/*
+            Assessment material, and deliberately not the candidate's to read —
+            same reasoning as the interviewer's feedback below. Gated here rather
+            than filtered in the read model because a startup and QSTP both need
+            it on this same screen; the candidate simply is not shown it.
+          */}
+          {interview.aiSummary && portal !== "candidate" ? (
             <div className="rounded-control border border-blue/20 bg-blue-tint px-4 py-3">
               <p className="text-xs font-semibold text-ink">AI draft summary</p>
               <p className="mt-2 text-sm leading-6 text-ink-2">
@@ -2431,6 +2437,38 @@ export function FallbackWorkflowPanel({
   );
 }
 
+/**
+ * What "OCR" reads off an upload in the demo, keyed by requirement title.
+ *
+ * Simulated, and labelled as such on screen. It exists because the step it
+ * drives is real: the candidate is the only person who can say whether the scan
+ * read their IBAN correctly, and a single generic field could not express that.
+ * The IBAN is deliberately the one that comes back wrong — a transposed digit
+ * there sends a salary to a stranger, which is the whole reason a human
+ * confirms before QSTP verifies.
+ */
+const SIMULATED_EXTRACTION: Record<string, readonly { key: string; label: string; extracted: string }[]> = {
+  "national id": [
+    { key: "id_number", label: "ID number", extracted: "28904177351" },
+    { key: "full_name", label: "Full name", extracted: "LAYLA AHMED" },
+    { key: "expiry", label: "Expiry date", extracted: "2029-06-30" },
+  ],
+  passport: [
+    { key: "passport_number", label: "Passport number", extracted: "QA8842107" },
+    { key: "full_name", label: "Full name", extracted: "LAYLA AHMED" },
+    { key: "expiry", label: "Expiry date", extracted: "2031-02-14" },
+  ],
+  "bank statement": [
+    { key: "iban", label: "IBAN", extracted: "QA58DOHB0000I234567890ABCDEFG" },
+    { key: "account_holder", label: "Account holder", extracted: "LAYLA AHMED" },
+    { key: "bank_name", label: "Bank", extracted: "Doha Bank" },
+  ],
+};
+
+function extractionFor(title: string): readonly { key: string; label: string; extracted: string }[] {
+  return SIMULATED_EXTRACTION[title.trim().toLowerCase()] ?? [];
+}
+
 export function RequirementWorkflowPanel({
   cycleId,
   requirement,
@@ -2448,7 +2486,13 @@ export function RequirementWorkflowPanel({
   const [fileName, setFileName] = useState(
     `${requirement.title.toLowerCase().replaceAll(" ", "-")}.pdf`,
   );
-  const [confirmedValue, setConfirmedValue] = useState("");
+  const fields = extractionFor(requirement.title);
+  // Pre-filled with what the scan read, so confirming an accurate read is one
+  // click and only a correction costs typing. Blanking a field is a valid
+  // answer — it means "the scan invented this".
+  const [confirmed, setConfirmed] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((field) => [field.key, field.extracted])),
+  );
   const [reason, setReason] = useState("");
   const action = usePanelAction();
   const mayUpload =
@@ -2494,12 +2538,26 @@ export function RequirementWorkflowPanel({
                   ) : null}
                   {submission.extractedFields.length > 0 ? (
                     <div className="mt-3 space-y-1">
-                      {submission.extractedFields.map((field) => (
-                        <p key={field.key} className="text-xs text-ink-2">
-                          {field.key}: extracted “{field.extracted ?? "—"}” ·
-                          confirmed “{field.confirmed ?? "—"}”
-                        </p>
-                      ))}
+                      {submission.extractedFields.map((field) => {
+                        // A corrected field is the one a verifier should look at
+                        // twice, so it is called out rather than left for them to
+                        // spot by comparing two quoted strings.
+                        const corrected =
+                          field.confirmed !== null &&
+                          field.confirmed !== field.extracted;
+                        return (
+                          <p key={field.key} className="text-xs text-ink-2">
+                            <span className="text-ink-3">{field.key}:</span>{" "}
+                            {field.confirmed ?? "not confirmed"}
+                            {corrected ? (
+                              <span className="text-warning-text">
+                                {" "}
+                                · corrected from “{field.extracted ?? "—"}”
+                              </span>
+                            ) : null}
+                          </p>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </li>
@@ -2514,13 +2572,41 @@ export function RequirementWorkflowPanel({
                 onChange={(event) => setFileName(event.target.value)}
                 hint="Only metadata is stored in the fixture adapter."
               />
-              {portal === "candidate" ? (
-                <TextField
-                  label="Confirm extracted reference value"
-                  value={confirmedValue}
-                  onChange={(event) => setConfirmedValue(event.target.value)}
-                  hint="The fixture keeps the extracted and candidate-confirmed values on every revision. Startup users cannot read them."
-                />
+              {portal === "candidate" && fields.length > 0 ? (
+                <section className="space-y-3 rounded-control border border-hairline p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">
+                      Check what the scan read
+                    </p>
+                    <p className="mt-1 text-xs text-ink-3">
+                      Correct anything that is wrong before this goes to QSTP.
+                      Only you and QSTP can read these values — the startup
+                      cannot.
+                    </p>
+                  </div>
+                  {fields.map((field) => {
+                    const value = confirmed[field.key] ?? "";
+                    const changed = value !== field.extracted;
+                    return (
+                      <div key={field.key} className="space-y-1">
+                        <TextField
+                          label={field.label}
+                          value={value}
+                          onChange={(event) =>
+                            setConfirmed((previous) => ({
+                              ...previous,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        />
+                        <p className="text-xs text-ink-3">
+                          Scan read “{field.extracted}”
+                          {changed ? " · you corrected this" : ""}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </section>
               ) : null}
             </div>
           ) : null}
@@ -2551,15 +2637,16 @@ export function RequirementWorkflowPanel({
                       cycleId,
                       requirementId: requirement.id,
                       fileName,
+                      // Both halves are kept: what the scan read and what the
+                      // candidate said it should be. Merging them would destroy
+                      // the only record of who corrected what.
                       extractedFields:
-                        portal === "candidate" && confirmedValue
-                          ? [
-                              {
-                                key: "reference",
-                                extracted: `fixture-extracted-v${submissions.length + 1}`,
-                                confirmed: confirmedValue,
-                              },
-                            ]
+                        portal === "candidate"
+                          ? fields.map((field) => ({
+                              key: field.key,
+                              extracted: field.extracted,
+                              confirmed: confirmed[field.key]?.trim() || null,
+                            }))
                           : [],
                     }),
                   )
@@ -2660,6 +2747,17 @@ export function RequirementWorkflowPanel({
   );
 }
 
+/** Declared in signing order, which is also the order the parties expect. */
+const AGREEMENT_LABELS = {
+  qstp_agreement: "QSTP agreement",
+  startup_agreement: "Startup agreement",
+  candidate_agreement: "Candidate agreement",
+} as const;
+
+const AGREEMENT_PARTIES = (
+  Object.keys(AGREEMENT_LABELS) as (keyof typeof AGREEMENT_LABELS)[]
+).map((kind) => ({ kind, label: AGREEMENT_LABELS[kind] }));
+
 export function PlacementWorkflowPanel({
   cycleId,
   placement,
@@ -2687,7 +2785,7 @@ export function PlacementWorkflowPanel({
       ? "qstp_agreement"
       : portal === "startup"
         ? "startup_agreement"
-        : null;
+        : "candidate_agreement";
   const signed = agreementKind
     ? signatures.some((row) => row.kind === agreementKind)
     : false;
@@ -2746,14 +2844,47 @@ export function PlacementWorkflowPanel({
               </ul>
             </section>
           ) : null}
+          {/*
+            Who has signed, for all three parties rather than just the reader's
+            own line. "Waiting on me" and "waiting on someone else" prompt
+            completely different behaviour, and a bare count cannot tell them
+            apart — least of all for the candidate, who is last in the chain and
+            has no other way to see where the placement is stuck.
+          */}
+          <section className="space-y-2 border-t border-hairline pt-5">
+            <div className="flex items-center gap-2">
+              <Signature className="size-4 text-accent" />
+              <p className="text-sm font-bold text-ink">Agreements</p>
+            </div>
+            {AGREEMENT_PARTIES.map(({ kind, label }) => {
+              const row = signatures.find((item) => item.kind === kind);
+              return (
+                <div
+                  key={kind}
+                  className="flex items-center justify-between gap-3 rounded-control bg-surface-sunken px-4 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink-2">{label}</p>
+                    {row ? (
+                      <p className="truncate text-xs text-ink-3">
+                        {row.signerName} · {row.signedAt}
+                      </p>
+                    ) : kind === agreementKind ? (
+                      <p className="text-xs text-ink-3">Yours to sign.</p>
+                    ) : null}
+                  </div>
+                  <Badge tone={row ? "positive" : "warning"}>
+                    {row ? "Signed" : "Outstanding"}
+                  </Badge>
+                </div>
+              );
+            })}
+          </section>
           {agreementKind && !signed && placement.status !== "cancelled" ? (
             <section className="space-y-3 border-t border-hairline pt-5">
-              <div className="flex items-center gap-2">
-                <Signature className="size-4 text-accent" />
-                <p className="text-sm font-bold text-ink">
-                  Simulated agreement
-                </p>
-              </div>
+              <p className="text-sm font-bold text-ink">
+                Sign the {AGREEMENT_LABELS[agreementKind].toLowerCase()}
+              </p>
               {openedAt ? (
                 <div className="max-h-36 overflow-y-auto rounded-control border border-hairline bg-surface-sunken p-4 text-xs leading-5 text-ink-2">
                   Fixture agreement for placement {placement.id}. The signer

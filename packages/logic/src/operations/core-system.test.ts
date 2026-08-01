@@ -9,6 +9,7 @@ import {
   getCycleWorkspace,
   publishAllocations,
   runPrioritization,
+  signPlacementAgreement,
   transitionPosition,
 } from './core-system';
 
@@ -212,5 +213,90 @@ describe('cycle-scoped core system flows', () => {
       'under_review',
       'approved',
     ]);
+  });
+
+  it('lets the candidate sign their own agreement and no one else sign it for them', async () => {
+    const store = createStore();
+    const placement = store.placements[0]!;
+    const sign = (actor: UseCaseContext['actor'], kind: 'candidate_agreement' | 'startup_agreement') =>
+      signPlacementAgreement(context(actor, store), {
+        cycleId: placement.cycleId,
+        placementId: placement.id,
+        kind,
+        signerName: 'Layla Ahmed',
+        declarationAccepted: true,
+        documentOpenedAt: '2026-08-01T08:55:00.000Z',
+      });
+
+    const signed = await sign(DEV_ACTORS.candidate(), 'candidate_agreement');
+    expect(signed.ok && signed.data.kind).toBe('candidate_agreement');
+    expect(signed.ok && signed.data.signerId).toBe(ids.candidateUser);
+
+    // Nobody signs on the candidate's behalf, and the candidate does not sign
+    // the startup's line. Both read as not_found rather than forbidden: the
+    // placement is simply not theirs to act on in that capacity.
+    for (const [actor, kind] of [
+      [DEV_ACTORS.manager(), 'candidate_agreement'],
+      [DEV_ACTORS.startupOwner(), 'candidate_agreement'],
+      [DEV_ACTORS.candidate(), 'startup_agreement'],
+    ] as const) {
+      const refused = await sign(actor, kind);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error.code).toBe('not_found');
+    }
+  });
+
+  it('holds Ready to Start on the candidate signature alone', async () => {
+    const store = createStore();
+    const placement = store.placements[0]!;
+    const ctx = context(DEV_ACTORS.manager(), store);
+    for (const requirement of store.placementRequirements.filter((row) => row.status !== 'approved')) {
+      await ctx.repos.requirements.decide({
+        requirementId: requirement.id,
+        decision: 'approved',
+        reason: null,
+        occurredAt: '2026-08-01T09:00:00.000Z',
+      });
+    }
+    for (const party of ['startup', 'qstp'] as const) {
+      await ctx.repos.placements.setReadiness({
+        placementId: placement.id,
+        party,
+        actorId: ids.qstpOps,
+        occurredAt: '2026-08-01T09:00:00.000Z',
+      });
+    }
+    for (const [actor, kind] of [
+      [DEV_ACTORS.manager(), 'qstp_agreement'],
+      [DEV_ACTORS.startupOwner(), 'startup_agreement'],
+    ] as const) {
+      const done = await signPlacementAgreement(context(actor, store), {
+        cycleId: placement.cycleId,
+        placementId: placement.id,
+        kind,
+        signerName: 'Signer',
+        declarationAccepted: true,
+        documentOpenedAt: '2026-08-01T08:55:00.000Z',
+      });
+      if (!done.ok) throw done.error;
+    }
+
+    const blockedOn = async () => {
+      const view = await getCycleWorkspace(ctx, { cycleId: placement.cycleId });
+      if (!view.ok) throw view.error;
+      return view.data.placementReadiness.find((row) => row.placementId === placement.id)?.blockers ?? [];
+    };
+    expect(await blockedOn()).toEqual(['Candidate agreement is unsigned.']);
+
+    const candidateSigned = await signPlacementAgreement(context(DEV_ACTORS.candidate(), store), {
+      cycleId: placement.cycleId,
+      placementId: placement.id,
+      kind: 'candidate_agreement',
+      signerName: 'Layla Ahmed',
+      declarationAccepted: true,
+      documentOpenedAt: '2026-08-01T08:55:00.000Z',
+    });
+    if (!candidateSigned.ok) throw candidateSigned.error;
+    expect(await blockedOn()).toEqual([]);
   });
 });

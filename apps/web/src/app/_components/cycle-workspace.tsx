@@ -68,6 +68,29 @@ function basePath(portal: Portal, cycleId: string): string {
   return `/${portal}/cycles/${cycleId}`;
 }
 
+/**
+ * Which workspaces a portal actually has.
+ *
+ * The read model already scopes every row by actor, which had the side effect of
+ * leaving the candidate two tabs that could only ever render an empty state:
+ * Allocation is cohort budget arithmetic they are not party to, and Positions is
+ * a startup's own drafting queue. A tab that is always empty teaches people to
+ * distrust the ones that are only sometimes empty, so they are removed rather
+ * than left to render nothing. `WORKSPACE_ACCESS` in render-cycle-workspace.tsx
+ * enforces the same list on the route, so a guessed URL 404s instead of showing
+ * a shell.
+ */
+export const PORTAL_WORKSPACES: Readonly<Record<Portal, readonly Workspace[]>> = {
+  qstp: ['allocation', 'positions', 'selection', 'recovery', 'placements', 'activity'],
+  startup: ['allocation', 'positions', 'selection', 'placements'],
+  candidate: ['selection', 'placements'],
+};
+
+/** Where a portal lands when it is handed a cycle but no workspace. */
+export function defaultWorkspace(portal: Portal): Workspace {
+  return PORTAL_WORKSPACES[portal][0] ?? 'selection';
+}
+
 export function CycleSwitcher({
   cycles,
   selected,
@@ -82,7 +105,7 @@ export function CycleSwitcher({
       {cycles.map((cycle) => (
         <Link
           key={cycle.id}
-          href={`${basePath(portal, cycle.id)}/allocation`}
+          href={`${basePath(portal, cycle.id)}/${defaultWorkspace(portal)}`}
           aria-current={cycle.id === selected.id ? 'page' : undefined}
           className={`rounded-control border px-3 py-2 text-xs font-semibold ${
             cycle.id === selected.id
@@ -282,24 +305,16 @@ export function CycleWorkspaceView({
         className="flex gap-1 overflow-x-auto border-b border-hairline"
         aria-label="Cycle workspace"
       >
-        {(Object.keys(labels) as Workspace[])
-          .filter(
-            (item) =>
-              portal === 'qstp' ||
-              (portal === 'startup'
-                ? item !== 'activity'
-                : !['recovery', 'activity'].includes(item)),
-          )
-          .map((item) => (
-            <Link
-              key={item}
-              href={`${path}/${item}`}
-              aria-current={item === workspace ? 'page' : undefined}
-              className={`border-b-2 px-3 py-2 text-xs font-semibold whitespace-nowrap ${item === workspace ? 'border-accent text-accent' : 'border-transparent text-ink-3 hover:text-ink'}`}
-            >
-              {labels[item]}
-            </Link>
-          ))}
+        {PORTAL_WORKSPACES[portal].map((item) => (
+          <Link
+            key={item}
+            href={`${path}/${item}`}
+            aria-current={item === workspace ? 'page' : undefined}
+            className={`border-b-2 px-3 py-2 text-xs font-semibold whitespace-nowrap ${item === workspace ? 'border-accent text-accent' : 'border-transparent text-ink-3 hover:text-ink'}`}
+          >
+            {labels[item]}
+          </Link>
+        ))}
       </nav>
 
       {workspace === 'allocation' ? (
@@ -1176,7 +1191,7 @@ export function CycleWorkspaceView({
                 </ul>
                 <div className="flex items-center justify-between gap-3 border-t border-hairline p-5">
                   <p className="text-xs text-ink-3">
-                    {data.signatures.filter((row) => row.placementId === placement.id).length}/2
+                    {data.signatures.filter((row) => row.placementId === placement.id).length}/3
                     agreements signed
                   </p>
                   <PlacementWorkflowPanel

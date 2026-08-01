@@ -54,6 +54,7 @@ describes what is actually deployed.
 | `0009_activity_rls.sql`         | the audit log, then default-deny RLS on all 42 tables             |
 | `0010_rpc.sql`                  | transactional functions for every multi-table write               |
 | `0011_reminder_engine.sql`      | reminder occurrences, channel fan-out, RLS and worker leases      |
+| `0012_candidate_agreement.sql`  | the candidate's own signature, and party-scoped signature RLS     |
 
 ## Reminder engine
 

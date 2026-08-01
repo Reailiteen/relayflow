@@ -356,8 +356,8 @@ describe('fixture repository contracts', () => {
     await repos.requirements.sign({
       placementId: placement.id,
       kind: 'candidate_agreement',
-      signerId: ids.userLayla,
-      signerName: 'Layla Haddad',
+      signerId: ids.candidateUser,
+      signerName: 'Layla Ahmed',
       declarationAccepted: true,
       documentOpenedAt: '2026-03-18T10:50:00.000Z',
       signedAt: '2026-03-18T10:51:00.000Z',
