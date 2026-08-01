@@ -8,8 +8,10 @@ import {
   decideException,
   grantHours,
   reclaimHours,
+  requestException,
   resolveConflict,
   selectCandidate,
+  submitPosition,
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
 import { DEV_ACTOR_COOKIE } from './context';
@@ -54,6 +56,14 @@ export async function grantHoursAction(input: unknown) {
 
 export async function selectCandidateAction(input: unknown) {
   return revalidate(await action(selectCandidate)(input));
+}
+
+export async function submitPositionAction(input: unknown) {
+  return revalidate(await action(submitPosition)(input));
+}
+
+export async function requestExceptionAction(input: unknown) {
+  return revalidate(await action(requestException)(input));
 }
 
 /**

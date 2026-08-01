@@ -1,6 +1,5 @@
 import { err, forbidden, notFound, ok, validation } from '@relayflow/core';
-import { ANY_STARTUP, authorize } from '@relayflow/access';
-import { z } from 'zod';
+import { ANY_STARTUP, authorize, isStartup } from '@relayflow/access';
 import {
   fitsInAllocation,
   positionHours,
@@ -26,9 +25,7 @@ import { defineUseCase, requireActor } from '../use-case';
 export const submitPosition = defineUseCase({
   name: 'position.submit',
 
-  input: submitPositionInput.extend({
-    startupId: z.uuid(),
-  }),
+  input: submitPositionInput,
 
   authorize: { capability: 'position:submit' as const, startupId: ANY_STARTUP },
 
@@ -36,9 +33,12 @@ export const submitPosition = defineUseCase({
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
 
-    const startupId = input.startupId as Parameters<typeof ctx.repos.startups.findById>[0];
+    // The startup comes from the verified actor, never from input. A submitted
+    // startupId would let one company spend another's allocation.
+    if (!isStartup(ctx.actor)) return err(forbidden('Only a startup can submit positions.'));
+    const startupId = ctx.actor.affiliations.find((a) => a.status === 'active')?.startupId;
+    if (!startupId) return err(forbidden('You are not an active member of a startup.'));
 
-    // Scope the coarse gate above to the startup actually named in the input.
     const scoped = authorize(ctx.actor, { capability: 'position:submit', startupId });
     if (!scoped.ok) return scoped;
 
