@@ -1,8 +1,9 @@
 import { can } from '@relayflow/access';
-import { getRedistributionPlan } from '@relayflow/logic';
+import { getQstpDashboard, getRedistributionPlan } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
 import { ReclaimButton } from './_reclaim';
+import { GrantButton } from './_grant';
 
 export const metadata = { title: 'Redistribution' };
 
@@ -33,6 +34,12 @@ export default async function RedistributionPage() {
 
   const plan = result.data;
   const canRun = can(actor, { capability: 'redistribution:run' });
+
+  // Hours free to hand out right now. Reclaimed hours only become grantable
+  // once they have actually been reclaimed, which is why this reads the live
+  // budget rather than adding `totalReclaimable` to it.
+  const dashboard = await getQstpDashboard(ctx, {});
+  const available = dashboard.ok ? dashboard.data.budget.unallocated : 0;
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
@@ -95,7 +102,12 @@ export default async function RedistributionPage() {
       <Panel>
         <PanelHeader
           title="Eligible to receive"
-          aside={<span className="text-xs text-text-muted">by score</span>}
+          aside={
+            <>
+              <Badge tone={available > 0 ? 'positive' : 'neutral'}>{available} h available</Badge>
+              <span className="text-xs text-text-muted">by score</span>
+            </>
+          }
         />
         {plan.eligible.length === 0 ? (
           <EmptyState>No waitlisted startups.</EmptyState>
@@ -115,6 +127,15 @@ export default async function RedistributionPage() {
               <span className="shrink-0 text-sm tabular-nums text-text-secondary">
                 {row.score ?? '—'}
               </span>
+              {canRun && (
+                <GrantButton
+                  startupId={row.startup.id}
+                  startupName={row.startup.name}
+                  currentHours={row.currentHours}
+                  recommended={row.recommended}
+                  available={available}
+                />
+              )}
             </div>
           ))
         )}

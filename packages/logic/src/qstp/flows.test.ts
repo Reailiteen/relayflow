@@ -4,7 +4,7 @@ import { DEV_ACTORS, createFixtureRepositories, createStore, ids } from '@relayf
 import { silentLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '../context';
 import { getQstpDashboard } from './dashboard';
-import { decideException, reclaimHours, resolveConflict } from './decisions';
+import { decideException, grantHours, reclaimHours, resolveConflict } from './decisions';
 import { getRedistributionPlan, listConflicts } from './views';
 
 /**
@@ -168,6 +168,62 @@ describe('QSTP demo flows', () => {
     it('is refused for operations staff — budget reshaping is manager-only', async () => {
       const ctx = contextFor(DEV_ACTORS.operations());
       const result = await reclaimHours(ctx, { startupId: ids.fintech, exceptionId: null });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('forbidden');
+    });
+  });
+
+  describe('granting reclaimed hours', () => {
+    it('completes the round trip: reclaim from one startup, grant to another', async () => {
+      const store = createStore();
+      const ctx = contextFor(DEV_ACTORS.manager(), store);
+
+      // Lusail is on zero hours, waiting for a redistribution round.
+      const reclaimed = await reclaimHours(ctx, { startupId: ids.fintech, exceptionId: null });
+      expect(reclaimed.ok && reclaimed.data.reclaimed).toBe(40);
+
+      const granted = await grantHours(ctx, {
+        startupId: ids.lusail,
+        weeklyHours: 20,
+        justification: 'Recovered hours, next by score.',
+      });
+      expect(granted.ok).toBe(true);
+      if (granted.ok) {
+        expect(granted.data.weeklyHours).toBe(20);
+        // Recorded as a redistribution grant, so the record explains itself.
+        expect(granted.data.fromRedistribution).toBe(true);
+      }
+
+      // 190 - 40 reclaimed + 20 granted = 170.
+      const after = await getQstpDashboard(ctx, {});
+      expect(after.ok && after.data.budget.allocated).toBe(170);
+    });
+
+    it('refuses a grant that would exceed the funded total', async () => {
+      const store = createStore();
+      const ctx = contextFor(DEV_ACTORS.manager(), store);
+
+      // Squeeze the cycle so only 10 hours remain unallocated.
+      const cycle = store.cycles[0];
+      if (!cycle) throw new Error('fixture has no cycle');
+      store.cycles[0] = { ...cycle, fundedWeeklyHours: 200 };
+
+      const result = await grantHours(ctx, { startupId: ids.lusail, weeklyHours: 60, justification: null });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('validation');
+        // The message says how much room there actually is.
+        expect(result.error.message).toContain('10');
+      }
+    });
+
+    it('is refused for operations staff', async () => {
+      const ctx = contextFor(DEV_ACTORS.operations());
+      const result = await grantHours(ctx, {
+        startupId: ids.lusail,
+        weeklyHours: 20,
+        justification: null,
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.code).toBe('forbidden');
     });

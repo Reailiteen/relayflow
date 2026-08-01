@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import {
   decideAllocation,
   decideException,
+  grantHours,
   reclaimHours,
   resolveConflict,
   selectCandidate,
@@ -45,6 +46,10 @@ export async function resolveConflictAction(input: unknown) {
 
 export async function reclaimHoursAction(input: unknown) {
   return revalidate(await action(reclaimHours)(input));
+}
+
+export async function grantHoursAction(input: unknown) {
+  return revalidate(await action(grantHours)(input));
 }
 
 export async function selectCandidateAction(input: unknown) {

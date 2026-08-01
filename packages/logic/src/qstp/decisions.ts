@@ -1,6 +1,15 @@
 import { z } from 'zod';
-import { conflict, err, notFound, ok } from '@relayflow/core';
-import { decideExceptionInput, exceptionId, isProtected, startupId } from '@relayflow/entities';
+import { conflict, err, notFound, ok, validation } from '@relayflow/core';
+import {
+  budgetView,
+  canChangeTier,
+  decideExceptionInput,
+  exceptionId,
+  isHourTier,
+  isProtected,
+  largestAffordableTier,
+  startupId,
+} from '@relayflow/entities';
 import { defineUseCase, requireActor } from '../use-case';
 
 /**
@@ -166,5 +175,84 @@ export const reclaimHours = defineUseCase({
     ctx.logger.info('hours reclaimed', { startupId: input.startupId, reclaimed });
 
     return ok({ reclaimed });
+  },
+});
+
+// ─── Grant reclaimed hours ───────────────────────────────────────────────────
+
+/**
+ * The other half of redistribution: give recovered hours to a waitlisted
+ * startup.
+ *
+ * The brief describes this as a smaller re-run of Stage 1, reusing the same
+ * prioritisation, so it deliberately goes through the same budget check as a
+ * first-round allocation — there is no separate "redistribution budget" that
+ * could drift from the real one.
+ *
+ * The grant is marked `fromRedistribution` so a later question of "why does
+ * this startup have 30 hours when it scored 37?" has an answer in the record.
+ */
+export const grantHours = defineUseCase({
+  name: 'qstp.grantHours',
+
+  input: z.object({
+    startupId,
+    weeklyHours: z.number().int().min(0).max(60),
+    justification: z.string().trim().max(2000).nullable().default(null),
+  }),
+
+  authorize: { capability: 'redistribution:run' as const },
+
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+
+    if (!isHourTier(input.weeklyHours)) {
+      return err(validation('That is not one of the programme’s hour tiers.'));
+    }
+
+    const cycleResult = await ctx.repos.cycles.findActive();
+    if (!cycleResult.ok) return cycleResult;
+    const cycle = cycleResult.data;
+    if (!cycle) return err(notFound('There is no active cycle.'));
+
+    const allocationsResult = await ctx.repos.allocations.listForCycle(cycle.id);
+    if (!allocationsResult.ok) return allocationsResult;
+
+    const confirmed = allocationsResult.data.filter((a) => a.status === 'confirmed');
+    const current = confirmed.find((a) => a.startupId === input.startupId);
+    const allocated = confirmed.reduce((total, a) => total + a.weeklyHours, 0);
+
+    const budget = { funded: cycle.fundedWeeklyHours, allocated, committed: 0 };
+
+    if (!canChangeTier(budget, current?.weeklyHours ?? 0, input.weeklyHours)) {
+      const view = budgetView(budget);
+      return err(
+        validation(
+          `Only ${view.unallocated} weekly hours are available. ` +
+            `The largest tier that fits is ${largestAffordableTier(budget)}.`,
+          { context: { requested: input.weeklyHours, available: view.unallocated } },
+        ),
+      );
+    }
+
+    const granted = await ctx.repos.allocations.decide({
+      cycleId: cycle.id,
+      startupId: input.startupId,
+      weeklyHours: input.weeklyHours,
+      score: current?.score ?? null,
+      justification: input.justification ?? 'Granted in redistribution round.',
+      overrideReason: null,
+      decidedBy: actor.data.userId,
+      decidedAt: ctx.clock.now().toISOString(),
+    });
+    if (!granted.ok) return granted;
+
+    ctx.logger.info('redistribution grant', {
+      startupId: input.startupId,
+      weeklyHours: input.weeklyHours,
+    });
+
+    return ok(granted.data);
   },
 });

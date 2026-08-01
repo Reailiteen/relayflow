@@ -3,7 +3,16 @@
 import { useState, useTransition } from 'react';
 import { Clock, Trophy } from 'lucide-react';
 import type { ConflictView } from '@relayflow/logic';
-import { Button, cn } from '@relayflow/ui-web';
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  TextAreaField,
+  cn,
+} from '@relayflow/ui-web';
 import { resolveConflictAction } from '@/server/actions';
 
 /**
@@ -43,22 +52,24 @@ export function ConflictCard({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [award, setAward] = useState<{ startupId: string; startupName: string } | null>(null);
+  const [reason, setReason] = useState('');
 
   const first = conflict.claims[0];
 
-  const award = (startupId: string, startupName: string) => {
-    const reason = window.prompt(
-      `Award ${conflict.candidate.fullName} to ${startupName}?\n\n` +
-        'Record why — the other startups will be told their claim was released.',
-    );
-    if (!reason?.trim()) return;
-
+  const confirmAward = () => {
+    if (!award || !reason.trim()) return;
     setError(null);
+    const target = award;
+    const text = reason.trim();
+    setAward(null);
+    setReason('');
+
     startTransition(async () => {
       const result = await resolveConflictAction({
         candidateId: conflict.candidate.id,
-        awardTo: startupId,
-        reason,
+        awardTo: target.startupId,
+        reason: text,
       });
       if (!result.ok) setError(result.message);
     });
@@ -125,7 +136,12 @@ export function ConflictCard({
                 size="xs"
                 variant="secondary"
                 disabled={pending}
-                onClick={() => award(claim.selection.startupId, claim.startup?.name ?? 'them')}
+                onClick={() =>
+                  setAward({
+                    startupId: claim.selection.startupId,
+                    startupName: claim.startup?.name ?? 'this startup',
+                  })
+                }
               >
                 Award to this startup
               </Button>
@@ -142,6 +158,48 @@ export function ConflictCard({
           Resolving conflicts requires an operations or programme-manager role.
         </p>
       )}
+
+      <Dialog
+        open={award !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setAward(null);
+            setReason('');
+          }
+        }}
+      >
+        {award && (
+          <DialogContent
+            title={`Award to ${award.startupName}`}
+            description={`${conflict.candidate.fullName} will be reserved for ${award.startupName}. Every other claim is released.`}
+          >
+            <DialogBody>
+              <div className="rounded-md bg-warning-subtle px-2.5 py-2 text-sm text-warning-text">
+                This overrides the first-come-first-served order. The startup that claimed first
+                will lose the candidate, so the reason needs to stand up to being questioned.
+              </div>
+
+              <TextAreaField
+                label="Reason for the override"
+                required
+                autoFocus
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="e.g. Candidate confirmed by phone that they had already withdrawn from the other startup."
+              />
+            </DialogBody>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="ghost">Cancel</Button>
+              </DialogClose>
+              <Button variant="primary" disabled={!reason.trim()} onClick={confirmAward}>
+                Award candidate
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }

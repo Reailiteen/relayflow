@@ -21,10 +21,6 @@ export default async function QstpLayout({ children }: { children: React.ReactNo
   return (
     <div className="flex h-dvh flex-col bg-background">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-        <div className="flex items-center gap-2">
-          <span className="h-4 w-1 rounded-full bg-accent" aria-hidden="true" />
-          <span className="text-md font-semibold tracking-tight">RelayFlow</span>
-        </div>
         <QstpNav />
         <div className="ml-auto flex items-center gap-2">
           <ActorSwitcher current={actor.role} />

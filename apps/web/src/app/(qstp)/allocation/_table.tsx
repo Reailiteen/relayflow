@@ -6,6 +6,7 @@ import { HOUR_TIERS, type HourTier } from '@relayflow/entities';
 import type { AllocationRow } from '@relayflow/logic';
 import { Badge, cn } from '@relayflow/ui-web';
 import { decideAllocationAction } from '@/server/actions';
+import { OverrideDialog } from './_override-dialog';
 
 /**
  * The allocation table.
@@ -27,24 +28,12 @@ export function AllocationTable({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Set when a chosen tier departs from the recommendation and needs a reason. */
+  const [override, setOverride] = useState<{ row: AllocationRow; tier: HourTier } | null>(null);
 
-  const assign = (row: AllocationRow, tier: HourTier) => {
+  const submit = (row: AllocationRow, tier: HourTier, overrideReason: string | null) => {
     setError(null);
     setBusyId(row.startup.id);
-
-    // An override needs a reason, and the use-case will reject one without it.
-    // Asking here keeps that rule from surfacing as an unexplained failure.
-    const recommended = row.recommended;
-    let overrideReason: string | null = null;
-    if (recommended !== null && recommended !== tier) {
-      overrideReason = window.prompt(
-        `The score recommends ${recommended} hours. Why are you assigning ${tier}?`,
-      );
-      if (!overrideReason?.trim()) {
-        setBusyId(null);
-        return;
-      }
-    }
 
     startTransition(async () => {
       const result = await decideAllocationAction({
@@ -57,6 +46,17 @@ export function AllocationTable({
       if (!result.ok) setError(result.message);
       setBusyId(null);
     });
+  };
+
+  const assign = (row: AllocationRow, tier: HourTier) => {
+    // Departing from the scored recommendation needs a written reason, and the
+    // use-case rejects one without it. Asking first keeps that rule from
+    // surfacing as an unexplained failure.
+    if (row.recommended !== null && row.recommended !== tier) {
+      setOverride({ row, tier });
+      return;
+    }
+    submit(row, tier, null);
   };
 
   return (
@@ -180,6 +180,20 @@ export function AllocationTable({
           You have read-only access. Allocation changes require an operations or programme-manager
           role.
         </p>
+      )}
+
+      {override && override.row.recommended !== null && (
+        <OverrideDialog
+          open
+          onOpenChange={(next) => !next && setOverride(null)}
+          startupName={override.row.startup.name}
+          recommended={override.row.recommended}
+          chosen={override.tier}
+          onConfirm={(reason) => {
+            submit(override.row, override.tier, reason);
+            setOverride(null);
+          }}
+        />
       )}
     </div>
   );

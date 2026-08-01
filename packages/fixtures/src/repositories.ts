@@ -108,7 +108,11 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
         score: input.score,
         overrideReason: input.overrideReason,
         justification: input.justification,
-        fromRedistribution: existing?.fromRedistribution ?? false,
+        // A grant that raises a startup above what it previously held during a
+        // redistribution round is recorded as such.
+        fromRedistribution:
+          existing?.fromRedistribution === true ||
+          (existing !== undefined && input.weeklyHours > existing.weeklyHours),
         decidedBy: input.decidedBy,
         decidedAt: input.decidedAt,
         createdAt: existing?.createdAt ?? input.decidedAt,

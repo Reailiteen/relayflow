@@ -145,3 +145,38 @@
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 }
+
+/* ── Overlay motion ────────────────────────────────────────────────────────
+   Four keyframes, defined here rather than pulling in tailwindcss-animate for
+   what amounts to a fade and a slide. Radix drives them via data-state.
+
+   All of it is wrapped in a reduced-motion guard: a drawer flying in from the
+   edge is one of the motions people with vestibular sensitivity report most,
+   and the drawer is navigation, so it appears constantly. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rf-fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes rf-fade-out {
+    to { opacity: 0; }
+  }
+  @keyframes rf-scale-in {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); }
+  }
+  @keyframes rf-slide-from-left {
+    from { transform: translateX(-100%); }
+  }
+
+  [data-rf-overlay][data-state='open'] {
+    animation: rf-fade-in 120ms ease-out;
+  }
+  [data-rf-overlay][data-state='closed'] {
+    animation: rf-fade-out 100ms ease-in;
+  }
+  [data-rf-dialog][data-state='open'] {
+    animation: rf-scale-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  [data-rf-drawer][data-state='open'] {
+    animation: rf-slide-from-left 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}

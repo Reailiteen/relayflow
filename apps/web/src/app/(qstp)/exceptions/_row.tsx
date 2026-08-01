@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import type { ExceptionView } from '@relayflow/logic';
 import { Badge, Button, cn } from '@relayflow/ui-web';
 import { decideExceptionAction } from '@/server/actions';
+import { ApproveDialog } from './_approve-dialog';
 
 const date = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', {
@@ -25,27 +26,21 @@ export function ExceptionRow({ view, canDecide }: { view: ExceptionView; canDeci
   const [error, setError] = useState<string | null>(null);
   const { request } = view;
 
-  const decide = (decision: 'approved' | 'rejected') => {
-    // Approving must set a new deadline; the use-case rejects one without it.
-    // Defaulting to what they asked for is almost always right, and editing it
-    // is the exception rather than the norm.
-    let grantedDeadline: string | null = null;
-    if (decision === 'approved') {
-      const answer = window.prompt(
-        `Grant an extension until? (YYYY-MM-DD)\n\nThey asked for ${date(request.requestedDeadline)}.`,
-        request.requestedDeadline.slice(0, 10),
-      );
-      if (!answer?.trim()) return;
-      grantedDeadline = new Date(`${answer.trim()}T23:59:00.000Z`).toISOString();
-    }
+  const [approving, setApproving] = useState(false);
 
+  const decide = (
+    decision: 'approved' | 'rejected',
+    grantedDeadline: string | null,
+    decisionNote: string | null,
+  ) => {
     setError(null);
+    setApproving(false);
     startTransition(async () => {
       const result = await decideExceptionAction({
         exceptionId: request.id,
         decision,
         grantedDeadline,
-        decisionNote: null,
+        decisionNote,
       });
       if (!result.ok) setError(result.message);
     });
@@ -92,10 +87,20 @@ export function ExceptionRow({ view, canDecide }: { view: ExceptionView; canDeci
 
         {canDecide && request.status === 'pending' && (
           <div className="flex shrink-0 gap-1.5">
-            <Button size="xs" variant="secondary" disabled={pending} onClick={() => decide('rejected')}>
+            <Button
+              size="xs"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => decide('rejected', null, null)}
+            >
               Reject
             </Button>
-            <Button size="xs" variant="primary" disabled={pending} onClick={() => decide('approved')}>
+            <Button
+              size="xs"
+              variant="primary"
+              disabled={pending}
+              onClick={() => setApproving(true)}
+            >
               Approve
             </Button>
           </div>
@@ -103,6 +108,13 @@ export function ExceptionRow({ view, canDecide }: { view: ExceptionView; canDeci
       </div>
 
       {error && <p className="mt-1.5 text-sm text-critical-text">{error}</p>}
+
+      <ApproveDialog
+        view={view}
+        open={approving}
+        onOpenChange={setApproving}
+        onConfirm={(grantedDeadline, note) => decide('approved', grantedDeadline, note)}
+      />
     </div>
   );
 }
