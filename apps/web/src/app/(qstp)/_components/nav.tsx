@@ -15,14 +15,14 @@ import { cn } from '@relayflow/ui-web';
 
 const SECTIONS = [
   { href: '/', label: 'Dashboard', ready: true },
-  { href: '/startups', label: 'Startups', ready: false },
-  { href: '/allocation', label: 'Allocation', ready: false },
-  { href: '/positions', label: 'Positions', ready: false },
-  { href: '/candidates', label: 'Candidates', ready: false },
-  { href: '/selection', label: 'Selection', ready: false },
-  { href: '/exceptions', label: 'Exceptions', ready: false },
-  { href: '/redistribution', label: 'Redistribution', ready: false },
-  { href: '/documents', label: 'Documents', ready: false },
+  { href: '/startups', label: 'Startups', ready: true },
+  { href: '/allocation', label: 'Allocation', ready: true },
+  { href: '/positions', label: 'Positions', ready: true },
+  { href: '/candidates', label: 'Candidates', ready: true },
+  { href: '/selection', label: 'Selection', ready: true },
+  { href: '/exceptions', label: 'Exceptions', ready: true },
+  { href: '/redistribution', label: 'Redistribution', ready: true },
+  { href: '/documents', label: 'Documents', ready: true },
 ] as const;
 
 export function QstpNav() {

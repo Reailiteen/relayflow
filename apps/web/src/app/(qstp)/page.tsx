@@ -29,6 +29,16 @@ const PRESENTATION: Record<
   documents_awaiting_verification: { tone: 'info', kind: 'Documents' },
 };
 
+/** Where each kind of problem is dealt with. */
+const DESTINATION: Record<AttentionItem['kind'], string> = {
+  candidate_conflict: '/selection',
+  selection_deadline_missed: '/redistribution',
+  exception_pending: '/exceptions',
+  hours_reclaimable: '/redistribution',
+  positions_not_submitted: '/positions',
+  documents_awaiting_verification: '/documents',
+};
+
 /** The capability that lets an actor act on each item, if any. */
 const ACTION: Partial<
   Record<AttentionItem['kind'], { capability: Parameters<typeof can>[1]['capability']; label: string }>
@@ -126,7 +136,7 @@ export default async function QstpDashboardPage() {
                   kind={presentation.kind}
                   subject={item.summary}
                   action={<ItemAction item={item} actor={actor} />}
-                  onClick={undefined}
+                  href={DESTINATION[item.kind]}
                 />
               );
             })}
