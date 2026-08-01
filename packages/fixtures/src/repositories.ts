@@ -1,5 +1,5 @@
 import { conflict, err, notFound, ok, type Result } from '@relayflow/core';
-import { blocksOthers, type Allocation, type Candidate, type CandidateDocument, type Cycle, type ExceptionRequest, type Interview, type PoolEntry, type Position, type Selection, type Startup, type StartupMember } from '@relayflow/entities';
+import { blocksOthers, type ExtractedField, type Allocation, type Candidate, type CandidateDocument, type Cycle, type ExceptionRequest, type Interview, type PoolEntry, type Position, type Selection, type Startup, type StartupMember } from '@relayflow/entities';
 import type {
   AllocationPort,
   CandidatePort,
@@ -60,6 +60,33 @@ export function createStore(): FixtureStore {
 }
 
 const uuid = () => crypto.randomUUID();
+
+/**
+ * What "OCR" returns in the demo, per document kind.
+ *
+ * The confidences are chosen to exercise the UI rather than to flatter it: the
+ * IBAN comes back at 0.58, which is exactly the case the candidate-review
+ * screen exists for.
+ */
+const SIMULATED_EXTRACTION: Partial<Record<CandidateDocument['kind'], ExtractedField[]>> = {
+  national_id: [
+    { key: 'id_number', label: 'ID number', extracted: '28904177351', confirmed: null, confidence: 0.96 },
+    { key: 'full_name', label: 'Full name', extracted: 'LAYLA AHMED', confirmed: null, confidence: 0.94 },
+    { key: 'nationality', label: 'Nationality', extracted: 'Qatari', confirmed: null, confidence: 0.89 },
+    { key: 'expiry', label: 'Expiry date', extracted: '2029-06-30', confirmed: null, confidence: 0.71 },
+  ],
+  passport: [
+    { key: 'passport_number', label: 'Passport number', extracted: 'QA8842107', confirmed: null, confidence: 0.92 },
+    { key: 'full_name', label: 'Full name', extracted: 'LAYLA AHMED', confirmed: null, confidence: 0.95 },
+    { key: 'expiry', label: 'Expiry date', extracted: '2031-02-14', confirmed: null, confidence: 0.83 },
+  ],
+  bank_statement: [
+    // Low on purpose. A wrong digit here sends a salary to a stranger.
+    { key: 'iban', label: 'IBAN', extracted: 'QA58DOHB0000I234567890ABCDEFG', confirmed: null, confidence: 0.58 },
+    { key: 'account_holder', label: 'Account holder', extracted: 'LAYLA AHMED', confirmed: null, confidence: 0.91 },
+    { key: 'bank_name', label: 'Bank', extracted: 'Doha Bank', confirmed: null, confidence: 0.88 },
+  ],
+};
 
 export function createFixtureRepositories(store: FixtureStore = createStore()): Repositories {
   const cycles: CyclePort = {
@@ -307,11 +334,85 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       Promise.resolve(ok(store.interviews.filter((i) => i.candidateId === candidateId))),
   };
 
+  const replaceDocument = (next: CandidateDocument) => {
+    const index = store.documents.findIndex((d) => d.id === next.id);
+    if (index >= 0) store.documents[index] = next;
+    return next;
+  };
+
   const documents: DocumentPort = {
+    findById: (id) => Promise.resolve(ok(store.documents.find((d) => d.id === id) ?? null)),
+
     listForCandidate: (candidateId) =>
       Promise.resolve(ok(store.documents.filter((d) => d.candidateId === candidateId))),
+
     listAwaitingVerification: () =>
       Promise.resolve(ok(store.documents.filter((d) => d.status === 'submitted'))),
+
+    upload: (input) => {
+      const document = store.documents.find((d) => d.id === input.documentId);
+      if (!document) return Promise.resolve(err(notFound('Document not found.')));
+
+      // Stand-in for OCR. The shapes are what a real extractor returns —
+      // including a deliberately low-confidence IBAN, because that is the field
+      // whose mis-read costs someone their salary and the UI has to handle it.
+      const extracted = SIMULATED_EXTRACTION[document.kind] ?? [];
+
+      return Promise.resolve(
+        ok(
+          replaceDocument({
+            ...document,
+            status: extracted.length > 0 ? 'awaiting_candidate_review' : 'submitted',
+            fileName: input.fileName,
+            storagePath: `candidates/${document.candidateId}/${input.fileName}`,
+            fields: extracted,
+            rejectionReason: null,
+            updatedAt: input.uploadedAt,
+          }),
+        ),
+      );
+    },
+
+    confirmFields: (input) => {
+      const document = store.documents.find((d) => d.id === input.documentId);
+      if (!document) return Promise.resolve(err(notFound('Document not found.')));
+
+      const byKey = new Map(input.fields.map((field) => [field.key, field.value]));
+
+      return Promise.resolve(
+        ok(
+          replaceDocument({
+            ...document,
+            // Confirmed sits alongside extracted; the original is never lost.
+            fields: document.fields.map((field) => ({
+              ...field,
+              confirmed: byKey.get(field.key) ?? field.confirmed,
+            })),
+            status: 'submitted',
+            rejectionReason: null,
+            updatedAt: input.confirmedAt,
+          }),
+        ),
+      );
+    },
+
+    verify: (input) => {
+      const document = store.documents.find((d) => d.id === input.documentId);
+      if (!document) return Promise.resolve(err(notFound('Document not found.')));
+
+      return Promise.resolve(
+        ok(
+          replaceDocument({
+            ...document,
+            status: input.decision,
+            rejectionReason: input.rejectionReason,
+            verifiedBy: input.decision === 'verified' ? input.verifiedBy : null,
+            verifiedAt: input.decision === 'verified' ? input.verifiedAt : null,
+            updatedAt: input.verifiedAt,
+          }),
+        ),
+      );
+    },
   };
 
   return {

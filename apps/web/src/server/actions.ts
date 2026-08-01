@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
+  confirmAvailability,
+  confirmDocumentFields,
   decideAllocation,
   decideException,
   grantHours,
@@ -12,6 +14,8 @@ import {
   resolveConflict,
   selectCandidate,
   submitPosition,
+  uploadDocument,
+  verifyDocument,
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
 import { DEV_ACTOR_COOKIE } from './context';
@@ -64,6 +68,22 @@ export async function submitPositionAction(input: unknown) {
 
 export async function requestExceptionAction(input: unknown) {
   return revalidate(await action(requestException)(input));
+}
+
+export async function confirmAvailabilityAction(input: unknown) {
+  return revalidate(await action(confirmAvailability)(input));
+}
+
+export async function uploadDocumentAction(input: unknown) {
+  return revalidate(await action(uploadDocument)(input));
+}
+
+export async function confirmDocumentFieldsAction(input: unknown) {
+  return revalidate(await action(confirmDocumentFields)(input));
+}
+
+export async function verifyDocumentAction(input: unknown) {
+  return revalidate(await action(verifyDocument)(input));
 }
 
 /**

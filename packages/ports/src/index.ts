@@ -15,6 +15,7 @@ import type {
   StartupId,
   StartupMember,
   CandidateId,
+  DocumentId,
   PositionId,
   UserId,
 } from '@relayflow/entities';
@@ -174,9 +175,52 @@ export interface InterviewPort {
 }
 
 export interface DocumentPort {
+  findById(id: DocumentId): Promise<Result<CandidateDocument | null>>;
   listForCandidate(candidateId: CandidateId): Promise<Result<CandidateDocument[]>>;
   /** Everything waiting on QSTP verification, across the cycle. */
   listAwaitingVerification(cycleId: CycleId): Promise<Result<CandidateDocument[]>>;
+
+  /**
+   * Records an upload and whatever OCR read from it.
+   *
+   * Extraction is modelled as part of the write rather than a later callback
+   * because the candidate is standing there waiting: they have just taken a
+   * photo of their ID and the next screen asks them to check the fields. A real
+   * implementation queues the OCR job and moves the document to `extracting`;
+   * the contract is the same either way.
+   */
+  upload(input: UploadDocumentCommand): Promise<Result<CandidateDocument>>;
+
+  /**
+   * The candidate's corrections to what OCR read.
+   *
+   * `extracted` is never overwritten — the confirmed value is stored alongside
+   * it, so "we read X, they corrected it to Y" stays answerable and the OCR's
+   * accuracy stays measurable.
+   */
+  confirmFields(input: ConfirmFieldsCommand): Promise<Result<CandidateDocument>>;
+
+  verify(input: VerifyDocumentCommand): Promise<Result<CandidateDocument>>;
+}
+
+export interface UploadDocumentCommand {
+  readonly documentId: DocumentId;
+  readonly fileName: string;
+  readonly uploadedAt: string;
+}
+
+export interface ConfirmFieldsCommand {
+  readonly documentId: DocumentId;
+  readonly fields: readonly { key: string; value: string }[];
+  readonly confirmedAt: string;
+}
+
+export interface VerifyDocumentCommand {
+  readonly documentId: DocumentId;
+  readonly decision: 'verified' | 'rejected';
+  readonly rejectionReason: string | null;
+  readonly verifiedBy: UserId;
+  readonly verifiedAt: string;
 }
 
 /** The single object use-cases receive. Adapters return one of these. */

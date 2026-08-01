@@ -10,6 +10,7 @@ import {
   largestAffordableTier,
   startupId,
 } from '@relayflow/entities';
+import { verifyDocumentInput } from '@relayflow/entities';
 import { defineUseCase, requireActor } from '../use-case';
 
 /**
@@ -254,5 +255,54 @@ export const grantHours = defineUseCase({
     });
 
     return ok(granted.data);
+  },
+});
+
+// ─── Verify a candidate document ─────────────────────────────────────────────
+
+/**
+ * QSTP checks a document the candidate has already confirmed.
+ *
+ * Rejecting requires a reason because the candidate has to act on it — "invalid"
+ * sends them back to the upload screen with nothing to change.
+ */
+export const verifyDocument = defineUseCase({
+  name: 'qstp.verifyDocument',
+  input: verifyDocumentInput,
+  authorize: { capability: 'document:verify' as const },
+
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+
+    const document = await ctx.repos.documents.findById(input.documentId);
+    if (!document.ok) return document;
+    if (!document.data) return err(notFound('Document not found.'));
+
+    // Verifying something the candidate has not yet checked would defeat the
+    // point of asking them to check it.
+    if (document.data.status !== 'submitted') {
+      return err(
+        conflict('That document is not awaiting verification.', {
+          context: { status: document.data.status },
+        }),
+      );
+    }
+
+    const verified = await ctx.repos.documents.verify({
+      documentId: input.documentId,
+      decision: input.decision,
+      rejectionReason: input.rejectionReason,
+      verifiedBy: actor.data.userId,
+      verifiedAt: ctx.clock.now().toISOString(),
+    });
+    if (!verified.ok) return verified;
+
+    ctx.logger.info('document decided', {
+      documentId: input.documentId,
+      decision: input.decision,
+    });
+
+    return ok(verified.data);
   },
 });
