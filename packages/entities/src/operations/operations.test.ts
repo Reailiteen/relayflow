@@ -2,31 +2,40 @@ import { describe, expect, it } from 'vitest';
 import { asId } from '@relayflow/core';
 import {
   committedPlacementHours,
+  effectiveHours,
   evaluateStageGate,
-  fitPrioritization,
   placementReadinessBlockers,
   recoverableAllocationHours,
-  type CycleParticipation,
   type Placement,
+  type PrioritizationOutcome,
+  type PrioritizationOutcomeStatus,
 } from '..';
 
 const cycleId = asId<'CycleId'>('c1c1e000-0000-4000-8000-000000000001');
-function participation(index: number, score: number, request = 60): CycleParticipation {
+
+function outcome(
+  status: PrioritizationOutcomeStatus,
+  overrides: Partial<PrioritizationOutcome> = {},
+): PrioritizationOutcome {
   return {
-    id: asId<'ParticipationId'>(`b1b1e000-0000-4000-8000-${String(index).padStart(12, '0')}`),
-    cycleId,
-    startupId: asId<'StartupId'>(`57a27000-0000-4000-8000-${String(index).padStart(12, '0')}`),
-    status: 'accepted',
-    requestedTotalHours: request,
-    requestedInternCount: 2,
-    disciplines: ['Engineering'],
-    operatorScore: score,
-    internalNotes: null,
-    startupJustification: null,
-    allocationAcknowledgedAt: null,
-    allocationAcknowledgedBy: null,
-    createdAt: `2026-01-${String(index).padStart(2, '0')}T00:00:00.000Z`,
-    updatedAt: '2026-01-20T00:00:00.000Z',
+    participationId: null,
+    startupId: asId<'StartupId'>('57a27000-0000-4000-8000-000000000001'),
+    status,
+    score: status === 'scored' ? 88 : null,
+    breakdown: null,
+    historySource: null,
+    rank: null,
+    requestedHours: 60,
+    maximumHours: null,
+    proposedHours: null,
+    adjustedHours: null,
+    adjustmentReason: null,
+    waitlistRank: null,
+    requiresTieResolution: false,
+    blockers: [],
+    signals: [],
+    adjustments: [],
+    ...overrides,
   };
 }
 
@@ -57,15 +66,35 @@ function placement(index: number, hours: number, status: Placement['status']): P
 }
 
 describe('fixture-backed operations domain', () => {
-  it('steps lower-ranked proposals down until the fixed budget fits', () => {
-    const proposals = fitPrioritization(
-      [participation(1, 95), participation(2, 90), participation(3, 80), participation(4, 72)],
-      130,
-    );
-    expect(proposals.reduce((sum, row) => sum + row.proposedHours, 0)).toBeLessThanOrEqual(130);
-    expect(proposals[0]?.proposedHours).toBe(60);
-    expect(proposals[3]?.proposedHours).toBe(0);
-    expect(proposals.every((row) => [0, 20, 30, 40, 60].includes(row.proposedHours))).toBe(true);
+  /**
+   * The rule the whole five-status design exists to protect. A startup nobody
+   * extracted and a startup that scored 12 both end up with zero hours; only
+   * the second one has actually been evaluated, and only it may become an
+   * allocation row.
+   */
+  it('gives no hours to any startup that was never scored', () => {
+    const unscored: PrioritizationOutcomeStatus[] = [
+      'needs_information',
+      'awaiting_manual_scores',
+      'not_ready',
+      'not_fundable',
+    ];
+    for (const status of unscored) {
+      // Even if a proposed tier somehow leaked onto the row.
+      expect(effectiveHours(outcome(status, { proposedHours: 40 }))).toBeNull();
+    }
+    // A scored startup at the bottom of the ladder DOES get a row — for 0h,
+    // which is a real decision and puts it on the waitlist.
+    expect(effectiveHours(outcome('scored', { proposedHours: 0 }))).toBe(0);
+  });
+
+  it('prefers a reviewed adjustment over the engine’s proposal', () => {
+    expect(
+      effectiveHours(
+        outcome('scored', { proposedHours: 40, adjustedHours: 20, adjustmentReason: 'Agreed with founder.' }),
+      ),
+    ).toBe(20);
+    expect(effectiveHours(outcome('scored', { proposedHours: 40 }))).toBe(40);
   });
 
   it('never counts a cancelled placement as committed hours', () => {
@@ -81,7 +110,11 @@ describe('fixture-backed operations domain', () => {
         { required: true, status: 'approved' },
         { required: true, status: 'awaiting_upload' },
       ],
-      signatures: [{ kind: 'qstp_agreement' }, { kind: 'startup_agreement' }],
+      signatures: [
+        { kind: 'qstp_agreement' },
+        { kind: 'startup_agreement' },
+        { kind: 'candidate_agreement' },
+      ],
       candidateReady: true,
       startupReady: true,
       detailsFinal: true,
@@ -90,6 +123,38 @@ describe('fixture-backed operations domain', () => {
       unresolvedException: false,
     });
     expect(blockers).toContain('Required documents are incomplete.');
+  });
+
+  it('blocks readiness until the candidate has signed, not just QSTP and the startup', () => {
+    const facts = {
+      active: true,
+      requirements: [{ required: true, status: 'approved' as const }],
+      candidateReady: true,
+      startupReady: true,
+      detailsFinal: true,
+      qstpApproved: true,
+      unresolvedConflict: false,
+      unresolvedException: false,
+    };
+    // Confirming readiness is not signing. A candidate who has ticked "I am
+    // ready" has still not agreed to the terms, and conflating the two would let
+    // a placement go live on two signatures.
+    expect(
+      placementReadinessBlockers({
+        ...facts,
+        signatures: [{ kind: 'qstp_agreement' }, { kind: 'startup_agreement' }],
+      }),
+    ).toEqual(['Candidate agreement is unsigned.']);
+    expect(
+      placementReadinessBlockers({
+        ...facts,
+        signatures: [
+          { kind: 'qstp_agreement' },
+          { kind: 'startup_agreement' },
+          { kind: 'candidate_agreement' },
+        ],
+      }),
+    ).toEqual([]);
   });
 
   it('requires a reason to override warnings but never permits blocker overrides', () => {

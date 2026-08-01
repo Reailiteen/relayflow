@@ -245,6 +245,8 @@ const position = (
   id: pid,
   cycleId: ids.cycle,
   startupId,
+  // The Spring cycle predates position intents, so these have no provenance.
+  intentId: null,
   title,
   description: `${title} supporting the team's delivery for the Spring 2026 cycle.`,
   requiredSkills: skills,

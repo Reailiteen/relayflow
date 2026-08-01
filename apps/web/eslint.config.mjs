@@ -34,9 +34,16 @@ export default [
     },
   },
   {
-    // The one file that picks an adapter and resolves identity. Keeping the
-    // exception this narrow is what makes the swap to Supabase a one-file change.
-    files: ['src/server/context.ts'],
+    // The files that pick an adapter or hold the session seam. Everything else
+    // in the app reaches storage only through a use-case.
+    //
+    //   context.ts    chooses the repositories and resolves the actor
+    //   supabase.ts   builds the request-scoped, RLS-bound client
+    //   proxy.ts      refreshes the session cookie before it expires
+    //
+    // Keeping the exception to these three is what makes the storage choice
+    // auditable in one place rather than a habit spread across route handlers.
+    files: ['src/server/context.ts', 'src/server/supabase.ts', 'proxy.ts'],
     rules: { 'no-restricted-imports': 'off' },
   },
 ];

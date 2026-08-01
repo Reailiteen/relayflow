@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_POLICY, maximumTierForScore } from '@relayflow/prioritisation';
 import { defineEntity, auditColumns } from '../shared/entity';
 import {
   allocationId,
@@ -115,13 +116,15 @@ export const allocationEntity = defineEntity({
 /**
  * The score-to-tier ladder. QSTP can override it, but the recommendation is
  * always computed the same way so that overrides are visible as overrides.
+ *
+ * Delegates to the engine's policy rather than restating it. It used to hold
+ * its own ladder at 85/70/55/40 while the engine ran on 85/70/50/35, which
+ * meant every engine allocation scoring 50–54 or 35–39 came back as
+ * `isOverride === true` and rendered in the UI as a manual override nobody had
+ * made. One funding decision, one ladder.
  */
 export function recommendedTier(score: number): HourTier {
-  if (score >= 85) return 60;
-  if (score >= 70) return 40;
-  if (score >= 55) return 30;
-  if (score >= 40) return 20;
-  return 0;
+  return maximumTierForScore(score, DEFAULT_POLICY) as HourTier;
 }
 
 export function isOverride(score: number | null, tier: HourTier): boolean {

@@ -17,7 +17,10 @@ import type {
   CandidateId,
   ActivityEvent,
   CycleParticipation,
+  PositionIntent,
   PrioritizationRun,
+  RatingItem,
+  StartupRating,
   Placement,
   PlacementRequirement,
   RequirementSubmission,
@@ -93,17 +96,81 @@ export interface ParticipationPort {
   acknowledge(cycleId: CycleId, startupId: StartupId, actorId: UserId, occurredAt: string): Promise<Result<CycleParticipation>>;
 }
 
+/**
+ * Persistence only.
+ *
+ * Scoring used to live inside the adapter, which meant the Supabase
+ * implementation would have had to reimplement it and the two could silently
+ * disagree about a funding decision. The calculation is now a pure function in
+ * `@relayflow/prioritisation`, called once by the use-case; all this port does
+ * is store the result, mint ids, and keep the version chain honest.
+ */
 export interface PrioritizationPort {
-  run(cycleId: CycleId, createdBy: UserId, createdAt: string): Promise<Result<PrioritizationRun>>;
+  /** Stores a new draft, superseding any existing one for the cycle. */
+  create(input: CreatePrioritizationRunCommand): Promise<Result<PrioritizationRun>>;
   listForCycle(cycleId: CycleId): Promise<Result<PrioritizationRun[]>>;
+  /**
+   * Records a manual change to one startup's tier. Produces a new version
+   * rather than editing the draft — an adjusted run and the run the engine
+   * actually produced are different documents.
+   */
   adjust(
     runId: PrioritizationRun['id'],
     startupId: StartupId,
     proposedHours: 0 | 20 | 30 | 40 | 60,
+    reason: string,
     adjustedBy: UserId,
     adjustedAt: string,
   ): Promise<Result<PrioritizationRun>>;
   confirm(runId: PrioritizationRun['id'], confirmedAt: string): Promise<Result<PrioritizationRun>>;
+}
+
+export type CreatePrioritizationRunCommand = Omit<
+  PrioritizationRun,
+  'id' | 'version' | 'status' | 'confirmedAt'
+>;
+
+/**
+ * Readiness answers collected during the `allocation` stage, before hours are
+ * assigned. Feeds the prioritisation engine's feasibility gate.
+ */
+export interface PositionIntentPort {
+  listForCycle(cycleId: CycleId): Promise<Result<PositionIntent[]>>;
+  listForStartup(cycleId: CycleId, startupId: StartupId): Promise<Result<PositionIntent[]>>;
+  save(
+    input: Omit<PositionIntent, 'id' | 'createdAt' | 'updatedAt'> & {
+      readonly id?: PositionIntent['id'];
+      readonly occurredAt: string;
+    },
+  ): Promise<Result<PositionIntent>>;
+  withdraw(id: PositionIntent['id'], occurredAt: string): Promise<Result<void>>;
+}
+
+/**
+ * The six QSTP judgements per startup.
+ *
+ * `submit` supersedes rather than overwrites — a rating that changed after a
+ * run was published must stay reconstructable, so the port never destroys one.
+ */
+export interface RatingPort {
+  listForCycle(cycleId: CycleId): Promise<Result<StartupRating[]>>;
+  /** The live rating: the submitted one if there is one, else the draft. */
+  findForStartup(cycleId: CycleId, startupId: StartupId): Promise<Result<StartupRating | null>>;
+  saveDraft(input: SaveRatingDraftCommand): Promise<Result<StartupRating>>;
+  submit(input: SubmitRatingCommand): Promise<Result<StartupRating>>;
+}
+
+export interface SaveRatingDraftCommand {
+  readonly cycleId: CycleId;
+  readonly startupId: StartupId;
+  readonly items: readonly Omit<RatingItem, 'id'>[];
+  readonly ratedBy: UserId;
+  readonly occurredAt: string;
+}
+
+export interface SubmitRatingCommand extends SaveRatingDraftCommand {
+  /** Required by the use-case when replacing an already-submitted rating. */
+  readonly revisionReason: string | null;
 }
 
 export interface ActivityPort {
@@ -240,6 +307,8 @@ export interface CreatePositionCommand {
   readonly supervisorName: string | null;
   readonly redistributionRoundId: RedistributionRoundId | null;
   readonly status?: 'draft' | 'submitted' | undefined;
+  /** Provenance, when this posting was seeded from a readiness answer. */
+  readonly intentId?: PositionIntent['id'] | null | undefined;
 }
 
 export interface CandidatePort {
@@ -566,6 +635,8 @@ export interface Repositories {
   readonly interviews: InterviewPort;
   readonly documents: DocumentPort;
   readonly participation: ParticipationPort;
+  readonly positionIntents: PositionIntentPort;
+  readonly ratings: RatingPort;
   readonly prioritization: PrioritizationPort;
   readonly activity: ActivityPort;
   readonly tasks: TaskPort;

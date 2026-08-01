@@ -18,8 +18,18 @@ that will be broken.
                               └────────┬────────┘
                               @relayflow/entities         schemas · domain types
                                        │
+                          @relayflow/prioritisation       scoring · allocation policy
+                                       │
                 @relayflow/core · logger · tokens         primitives
 ```
+
+`prioritisation` sits below `entities` rather than inside it. Entities holds
+schemas and domain types; this is a versioned policy engine with its own
+contract and a golden replay fixture. Being below means a stored run can be
+typed by the engine's own output instead of a re-declared copy that drifts from
+it, and the engine can stay ignorant of branded ids and storage — which is what
+keeps its fixture replayable and lets it be diffed against the experiment it was
+ported from.
 
 Two adapters implement `ports`, and they are interchangeable:
 
@@ -178,6 +188,7 @@ race windows — so tests inject `fixedClock()`.
 | `@relayflow/core`     | `packages/core`      | Result, error taxonomy, env parsing, clock, ids    |
 | `@relayflow/logger`   | `packages/logger`    | Structured logging with redaction on by default    |
 | `@relayflow/tokens`   | `packages/tokens`    | Design tokens, shared by web CSS and native        |
+| `@relayflow/prioritisation` | `packages/prioritisation` | Startup scoring, tiering, budget allocation |
 | `@relayflow/entities` | `packages/entities`  | Zod schemas, domain types, row → domain mapping    |
 | `@relayflow/ports`    | `packages/ports`     | Storage interfaces — no implementation             |
 | `@relayflow/access`   | `packages/access`    | Capabilities, actor, pure policy decisions         |

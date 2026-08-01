@@ -1,0 +1,405 @@
+{
+  "schemaVersion": "1.0.0",
+  "policyVersion": "prioritization-v3-experiment-2",
+  "runStatus": "complete_draft",
+  "allocationMode": "priority",
+  "allocationStrategy": "priority_concentration_equal_ties",
+  "cycle": {
+    "cycleId": "fixture-cycle-001",
+    "submissionCutoffDate": "2026-08-01",
+    "budgetHours": 130
+  },
+  "budget": {
+    "availableHours": 130,
+    "maximumQualifiedHours": 170,
+    "proposedHours": 120,
+    "residualHours": 10,
+    "withinBudget": true
+  },
+  "counts": {
+    "submitted": 5,
+    "statuses": {
+      "scored": 4,
+      "not_ready": 1
+    },
+    "funded": 3,
+    "waitlisted": 1,
+    "finalTiers": {
+      "0": 1,
+      "20": 0,
+      "30": 2,
+      "40": 0,
+      "60": 1
+    }
+  },
+  "startups": [
+    {
+      "startupId": "startup-a",
+      "startupName": "Apex Analytics",
+      "status": "scored",
+      "blockers": [],
+      "score": 95,
+      "breakdown": {
+        "progressAgainstStage": 20,
+        "tractionStrength": 20,
+        "valueToStartup": 15,
+        "valueToIntern": 15,
+        "qstpQatarAlignment": 10,
+        "researchEcosystemContribution": 10,
+        "history": 5
+      },
+      "historySource": "neutral_no_history",
+      "positionResults": [
+        {
+          "index": 0,
+          "id": "role-a",
+          "title": "Data Intern",
+          "feasible": true,
+          "checks": {
+            "title": true,
+            "category": true,
+            "expectedDeliverable": true,
+            "learningOutcomes": true,
+            "workMode": true,
+            "supervisor": true,
+            "supervisorCapacity": true,
+            "supervisionCommitment": true,
+            "resourcesReady": true,
+            "onboardingReady": true
+          },
+          "canonical": {
+            "id": "role-a",
+            "title": "Data Intern",
+            "category": "data",
+            "expectedDeliverable": "Validated analytics dashboard",
+            "learningOutcomes": [
+              "Data validation",
+              "Dashboard design"
+            ],
+            "workMode": "hybrid",
+            "supervisorName": "Aisha Karim",
+            "relevantExperienceYears": null,
+            "weeklySupervisionMinutes": 60,
+            "maximumInterns": 1,
+            "resourcesReady": true,
+            "onboardingReady": true
+          }
+        }
+      ],
+      "rank": 1,
+      "maximumHours": 60,
+      "finalHours": 60,
+      "waitlistRank": null,
+      "adjustments": [],
+      "signals": []
+    },
+    {
+      "startupId": "startup-b",
+      "startupName": "Beacon Health",
+      "status": "scored",
+      "blockers": [],
+      "score": 72.5,
+      "breakdown": {
+        "progressAgainstStage": 15,
+        "tractionStrength": 15,
+        "valueToStartup": 11.25,
+        "valueToIntern": 11.25,
+        "qstpQatarAlignment": 7.5,
+        "researchEcosystemContribution": 7.5,
+        "history": 5
+      },
+      "historySource": "neutral_no_history",
+      "positionResults": [
+        {
+          "index": 0,
+          "id": "role-b",
+          "title": "Research Intern",
+          "feasible": true,
+          "checks": {
+            "title": true,
+            "category": true,
+            "expectedDeliverable": true,
+            "learningOutcomes": true,
+            "workMode": true,
+            "supervisor": true,
+            "supervisorCapacity": true,
+            "supervisionCommitment": true,
+            "resourcesReady": true,
+            "onboardingReady": true
+          },
+          "canonical": {
+            "id": "role-b",
+            "title": "Research Intern",
+            "category": "research",
+            "expectedDeliverable": "Clinical evidence map",
+            "learningOutcomes": [
+              "Literature review",
+              "Evidence synthesis"
+            ],
+            "workMode": "onsite",
+            "supervisorName": "Bilal Noor",
+            "relevantExperienceYears": null,
+            "weeklySupervisionMinutes": 45,
+            "maximumInterns": 1,
+            "resourcesReady": true,
+            "onboardingReady": true
+          }
+        }
+      ],
+      "rank": 2,
+      "maximumHours": 40,
+      "finalHours": 30,
+      "waitlistRank": null,
+      "adjustments": [
+        {
+          "type": "budget_downgrade",
+          "fromHours": 40,
+          "toHours": 30,
+          "reason": "priority_concentration_equal_treatment_for_exact_scores"
+        }
+      ],
+      "signals": [
+        {
+          "type": "budget_limited_below_maximum",
+          "maximumHours": 40,
+          "finalHours": 30
+        }
+      ]
+    },
+    {
+      "startupId": "startup-c",
+      "startupName": "Circuit Works",
+      "status": "scored",
+      "blockers": [],
+      "score": 72.5,
+      "breakdown": {
+        "progressAgainstStage": 15,
+        "tractionStrength": 15,
+        "valueToStartup": 11.25,
+        "valueToIntern": 11.25,
+        "qstpQatarAlignment": 7.5,
+        "researchEcosystemContribution": 7.5,
+        "history": 5
+      },
+      "historySource": "neutral_no_history",
+      "positionResults": [
+        {
+          "index": 0,
+          "id": "role-c",
+          "title": "Engineering Intern",
+          "feasible": true,
+          "checks": {
+            "title": true,
+            "category": true,
+            "expectedDeliverable": true,
+            "learningOutcomes": true,
+            "workMode": true,
+            "supervisor": true,
+            "supervisorCapacity": true,
+            "supervisionCommitment": true,
+            "resourcesReady": true,
+            "onboardingReady": true
+          },
+          "canonical": {
+            "id": "role-c",
+            "title": "Engineering Intern",
+            "category": "engineering",
+            "expectedDeliverable": "Tested sensor prototype",
+            "learningOutcomes": [
+              "Hardware testing",
+              "Technical reporting"
+            ],
+            "workMode": "onsite",
+            "supervisorName": "Cora Said",
+            "relevantExperienceYears": null,
+            "weeklySupervisionMinutes": 60,
+            "maximumInterns": 2,
+            "resourcesReady": true,
+            "onboardingReady": true
+          }
+        }
+      ],
+      "rank": 3,
+      "maximumHours": 40,
+      "finalHours": 30,
+      "waitlistRank": null,
+      "adjustments": [
+        {
+          "type": "budget_downgrade",
+          "fromHours": 40,
+          "toHours": 30,
+          "reason": "priority_concentration_equal_treatment_for_exact_scores"
+        }
+      ],
+      "signals": [
+        {
+          "type": "budget_limited_below_maximum",
+          "maximumHours": 40,
+          "finalHours": 30
+        }
+      ]
+    },
+    {
+      "startupId": "startup-d",
+      "startupName": "Delta Energy",
+      "status": "scored",
+      "blockers": [],
+      "score": 57.5,
+      "breakdown": {
+        "progressAgainstStage": 10,
+        "tractionStrength": 10,
+        "valueToStartup": 11.25,
+        "valueToIntern": 11.25,
+        "qstpQatarAlignment": 5,
+        "researchEcosystemContribution": 5,
+        "history": 5
+      },
+      "historySource": "neutral_no_history",
+      "positionResults": [
+        {
+          "index": 0,
+          "id": "role-d",
+          "title": "Operations Intern",
+          "feasible": true,
+          "checks": {
+            "title": true,
+            "category": true,
+            "expectedDeliverable": true,
+            "learningOutcomes": true,
+            "workMode": true,
+            "supervisor": true,
+            "supervisorCapacity": true,
+            "supervisionCommitment": true,
+            "resourcesReady": true,
+            "onboardingReady": true
+          },
+          "canonical": {
+            "id": "role-d",
+            "title": "Operations Intern",
+            "category": "operations",
+            "expectedDeliverable": "Documented pilot workflow",
+            "learningOutcomes": [
+              "Process mapping",
+              "Pilot operations"
+            ],
+            "workMode": "hybrid",
+            "supervisorName": "Dana Omar",
+            "relevantExperienceYears": null,
+            "weeklySupervisionMinutes": 30,
+            "maximumInterns": 1,
+            "resourcesReady": true,
+            "onboardingReady": true
+          }
+        }
+      ],
+      "rank": 4,
+      "maximumHours": 30,
+      "finalHours": 0,
+      "waitlistRank": 1,
+      "adjustments": [
+        {
+          "type": "budget_downgrade",
+          "fromHours": 30,
+          "toHours": 20,
+          "reason": "priority_concentration_equal_treatment_for_exact_scores"
+        },
+        {
+          "type": "budget_downgrade",
+          "fromHours": 20,
+          "toHours": 0,
+          "reason": "priority_concentration_equal_treatment_for_exact_scores"
+        }
+      ],
+      "signals": [
+        {
+          "type": "budget_limited_below_maximum",
+          "maximumHours": 30,
+          "finalHours": 0
+        }
+      ]
+    },
+    {
+      "startupId": "startup-e",
+      "startupName": "Echo Environment",
+      "status": "not_ready",
+      "blockers": [
+        {
+          "type": "no_feasible_position"
+        }
+      ],
+      "score": null,
+      "breakdown": null,
+      "historySource": null,
+      "positionResults": [
+        {
+          "index": 0,
+          "id": "role-e",
+          "title": "Sustainability Intern",
+          "feasible": false,
+          "checks": {
+            "title": true,
+            "category": true,
+            "expectedDeliverable": true,
+            "learningOutcomes": true,
+            "workMode": true,
+            "supervisor": true,
+            "supervisorCapacity": true,
+            "supervisionCommitment": true,
+            "resourcesReady": false,
+            "onboardingReady": true
+          },
+          "canonical": {
+            "id": "role-e",
+            "title": "Sustainability Intern",
+            "category": "research",
+            "expectedDeliverable": "Waste baseline report",
+            "learningOutcomes": [
+              "Field research",
+              "Impact measurement"
+            ],
+            "workMode": "onsite",
+            "supervisorName": "Eman Ali",
+            "relevantExperienceYears": null,
+            "weeklySupervisionMinutes": 60,
+            "maximumInterns": 1,
+            "resourcesReady": false,
+            "onboardingReady": true
+          }
+        }
+      ],
+      "rank": null,
+      "maximumHours": null,
+      "finalHours": null,
+      "waitlistRank": null,
+      "adjustments": [],
+      "signals": []
+    }
+  ],
+  "waitlist": [
+    {
+      "startupId": "startup-d",
+      "startupName": "Delta Energy",
+      "score": 57.5,
+      "rank": 4,
+      "waitlistRank": 1,
+      "displayOrder": 1,
+      "tieGroupSize": 1,
+      "orderStatus": "resolved_by_score",
+      "reason": "budget_priority_concentration"
+    }
+  ],
+  "signals": [
+    {
+      "type": "exact_score_tie",
+      "startupIds": [
+        "startup-b",
+        "startup-c"
+      ],
+      "score": 72.5
+    },
+    {
+      "type": "residual_hours",
+      "hours": 10
+    }
+  ]
+}

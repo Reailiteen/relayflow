@@ -4,6 +4,7 @@ import { createFixtureRepositories, createStore, DEV_ACTORS, ids } from '@relayf
 import { silentLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '../context';
 import {
+  adjustPrioritization,
   advanceCycleStage,
   getCycleWorkspace,
   publishAllocations,
@@ -29,7 +30,7 @@ describe('cycle-scoped core system flows', () => {
     const second = await getCycleWorkspace(ctx, { cycleId: secondCycle.id });
     expect(first.ok && first.data.positions.length).toBeGreaterThan(0);
     expect(second.ok && second.data.positions).toEqual([]);
-    expect(second.ok && second.data.participation).toHaveLength(3);
+    expect(second.ok && second.data.participation.length).toBeGreaterThan(0);
   });
 
   it('hides internal scoring and candidate-owned requirements from startups', async () => {
@@ -63,10 +64,94 @@ describe('cycle-scoped core system flows', () => {
     expect(run.ok).toBe(true);
     if (!run.ok) return;
     expect(run.data.proposedHours).toBeLessThanOrEqual(cycle.fundedWeeklyHours);
-    const published = await publishAllocations(ctx, { cycleId: cycle.id, runId: run.data.id });
+    expect(run.data.withinBudget).toBe(true);
+    const published = await publishAllocations(ctx, {
+      cycleId: cycle.id,
+      runId: run.data.id,
+      acknowledgeIncomplete: true,
+      incompleteReason: 'Chasing the outstanding rating and intent separately.',
+    });
     expect(published.ok && published.data.status).toBe('confirmed');
     const allocations = await ctx.repos.allocations.listForCycle(cycle.id);
     expect(allocations.ok && allocations.data.reduce((sum, row) => sum + row.weeklyHours, 0)).toBeLessThanOrEqual(cycle.fundedWeeklyHours);
+  });
+
+  /**
+   * The behaviour the whole five-status design exists for. Two startups here
+   * were never evaluated — one submitted no readiness answer, one has no
+   * rating — and they must not come out the other side holding a 0h allocation
+   * that reads as "we assessed you and you did not qualify".
+   */
+  it('gives no allocation to a startup that was never evaluated', async () => {
+    const store = createStore();
+    const cycle = store.cycles.find((row) => row.id !== ids.cycle)!;
+    const ctx = context(DEV_ACTORS.manager(), store);
+
+    const run = await runPrioritization(ctx, { cycleId: cycle.id });
+    if (!run.ok) throw run.error;
+
+    const byStatus = (status: string) =>
+      run.data.outcomes.filter((row) => row.status === status).map((row) => row.startupId);
+
+    // Every distinct outcome the engine can reach is represented.
+    expect(byStatus('scored').length).toBeGreaterThan(0);
+    expect(byStatus('needs_information')).toHaveLength(1);
+    expect(byStatus('awaiting_manual_scores')).toHaveLength(1);
+    expect(byStatus('not_ready')).toHaveLength(1);
+    expect(byStatus('not_fundable')).toHaveLength(1);
+    expect(run.data.completeness).toBe('partial_draft');
+
+    // Refused outright until somebody says, in writing, that this is intended.
+    const blindPublish = await publishAllocations(ctx, { cycleId: cycle.id, runId: run.data.id });
+    expect(blindPublish.ok).toBe(false);
+
+    const published = await publishAllocations(ctx, {
+      cycleId: cycle.id,
+      runId: run.data.id,
+      acknowledgeIncomplete: true,
+      incompleteReason: 'Publishing the evaluated startups; the rest are being chased.',
+    });
+    expect(published.ok).toBe(true);
+
+    const allocations = await ctx.repos.allocations.listForCycle(cycle.id);
+    if (!allocations.ok) throw allocations.error;
+    const allocated = new Set(allocations.data.map((row) => row.startupId));
+
+    // Scored startups get a row — including any at 0h, which is a real decision.
+    for (const startupId of byStatus('scored')) expect(allocated.has(startupId)).toBe(true);
+    // The other four get nothing at all.
+    for (const status of ['needs_information', 'awaiting_manual_scores', 'not_ready', 'not_fundable']) {
+      for (const startupId of byStatus(status)) expect(allocated.has(startupId)).toBe(false);
+    }
+
+    // And they stay visible, by name and reason, rather than vanishing.
+    const events = await ctx.repos.activity.listForCycle(cycle.id);
+    expect(
+      events.ok && events.data.filter((row) => row.action === 'startup_not_allocated'),
+    ).toHaveLength(4);
+  });
+
+  it('treats an exact-score tie as equal and refuses to split it by accident', async () => {
+    const store = createStore();
+    const cycle = store.cycles.find((row) => row.id !== ids.cycle)!;
+    const ctx = context(DEV_ACTORS.manager(), store);
+    const run = await runPrioritization(ctx, { cycleId: cycle.id });
+    if (!run.ok) throw run.error;
+
+    const scored = run.data.outcomes.filter((row) => row.status === 'scored');
+    const tied = scored.filter((row) => row.score === scored[0]?.score);
+    expect(tied.length).toBeGreaterThan(1);
+    // Equal scores, equal hours. Always.
+    expect(new Set(tied.map((row) => row.proposedHours)).size).toBe(1);
+
+    const split = await adjustPrioritization(ctx, {
+      cycleId: cycle.id,
+      runId: run.data.id,
+      startupId: tied[0]!.startupId,
+      proposedHours: 20,
+      reason: 'Moving one of a tied pair without acknowledging the tie.',
+    });
+    expect(split.ok).toBe(false);
   });
 
   it('requires a warning reason to advance an allocation with unacknowledged grants', async () => {
@@ -75,7 +160,12 @@ describe('cycle-scoped core system flows', () => {
     const ctx = context(DEV_ACTORS.manager(), store);
     const run = await runPrioritization(ctx, { cycleId: cycle.id });
     if (!run.ok) throw run.error;
-    const published = await publishAllocations(ctx, { cycleId: cycle.id, runId: run.data.id });
+    const published = await publishAllocations(ctx, {
+      cycleId: cycle.id,
+      runId: run.data.id,
+      acknowledgeIncomplete: true,
+      incompleteReason: 'Chasing the outstanding rating and intent separately.',
+    });
     if (!published.ok) throw published.error;
     const blocked = await advanceCycleStage(ctx, {
       cycleId: cycle.id,

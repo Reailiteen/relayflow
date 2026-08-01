@@ -20,10 +20,10 @@ See [02B — Action automations](./02-action-automations.md).
 ```ts
 interface ReminderRule {
   id: RuleId;
-  key: string;                   // stable, code-owned identifier
-  name: string;                  // e.g. "Chase silent startups"
+  key: string; // stable, code-owned identifier
+  name: string; // e.g. "Chase silent startups"
   enabled: boolean;
-  cycleId: CycleId | null;       // null = applies to every cycle
+  cycleId: CycleId | null; // null = applies to every cycle
 
   trigger: Trigger;
   audience: Audience;
@@ -31,8 +31,8 @@ interface ReminderRule {
     template: TemplateId;
     channels: ChannelPolicy;
     category: NotificationCategory;
-    mandatory: boolean;          // recipients cannot mute it
-    urgent: boolean;             // bypasses digest
+    mandatory: boolean; // recipients cannot mute it
+    urgent: boolean; // bypasses digest
   };
 
   cooldownHours: number | null;
@@ -44,9 +44,9 @@ interface ReminderRule {
 
 ```ts
 type Trigger =
-  | { kind: 'schedule'; anchor: DeadlineName; offsetHours: number }
-  | { kind: 'state'; predicate: PredicateName }
-  | { kind: 'event'; event: DomainEventName };
+  | { kind: "schedule"; anchor: DeadlineName; offsetHours: number }
+  | { kind: "state"; predicate: PredicateName }
+  | { kind: "event"; event: DomainEventName };
 ```
 
 `schedule` covers reminders relative to deadlines. `state` covers "is something
@@ -74,7 +74,7 @@ interface ReminderOccurrence {
   ruleId: RuleId;
   cycleId: CycleId;
   subject: {
-    kind: 'startup' | 'candidate' | 'exception' | 'document' | 'selection';
+    kind: "startup" | "candidate" | "exception" | "document" | "selection";
     id: string;
   };
   occurrenceKey: string;
@@ -89,11 +89,11 @@ templates do not perform fresh domain queries.
 
 ```ts
 type Audience = {
-  principal: 'qstp' | 'startup' | 'candidate';
+  principal: "qstp" | "startup" | "candidate";
   scope:
-    | { kind: 'all' }
-    | { kind: 'matching'; predicate: PredicateName }
-    | { kind: 'explicit'; ids: readonly string[] };
+    | { kind: "all" }
+    | { kind: "matching"; predicate: PredicateName }
+    | { kind: "explicit"; ids: readonly string[] };
   roles?: readonly string[];
 };
 ```
@@ -123,7 +123,7 @@ interface Notification {
   id: NotificationId;
   occurrenceId: OccurrenceId;
   recipientId: UserId;
-  title: string;                 // rendered snapshot for the audit trail
+  title: string; // rendered snapshot for the audit trail
   body: string;
   actionHref: string | null;
   readAt: string | null;
@@ -133,7 +133,7 @@ interface Notification {
 interface DeliveryAttempt {
   notificationId: NotificationId;
   channel: Channel;
-  status: 'pending' | 'sent' | 'failed' | 'bounced';
+  status: "pending" | "sent" | "failed" | "bounced";
   attempt: number;
   lastError: string | null;
   attemptedAt: string | null;
@@ -239,6 +239,30 @@ Simulate them in fixtures exactly as OCR and transcription are today.
 **Phase 3 — escalation, digest and preferences.** Add the durable runner and
 outbox when Supabase becomes the real adapter.
 
+## Supabase implementation base
+
+The durable backend begins in
+`supabase/migrations/0011_reminder_engine.sql`, using the proven parts of
+Parametra's notification design while preserving RelayFlow's boundaries:
+
+- occurrences are separate from per-recipient/channel delivery rows;
+- one SQL fan-out function owns channel policy and preferences;
+- recipient RLS exposes only in-app rows, while QSTP retains the delivery audit;
+- partial indexes serve inbox, unread-count and worker-queue paths;
+- external jobs are claimed with `FOR UPDATE SKIP LOCKED` and a five-minute
+  lease;
+- claim-token compare-and-set prevents a stale worker from completing a job
+  after another worker has reclaimed it;
+- the worker supports email, Slack and push. Its hackathon deployment is
+  intentionally unauthenticated; caller authentication is required before real
+  participant data or production use.
+
+The first database evaluator is `enqueue_positions_not_submitted_reminders`.
+It runs only during the configured pre-deadline window, resolves active startup
+owners/members, records a stable occurrence and fans it out idempotently. The
+fixture-backed web application remains unchanged until real Supabase auth and
+the full repository adapter replace the development context.
+
 The first vertical slice is **Positions not submitted**: evaluate it 72 hours
 before the submission deadline, notify matching startup members in-app, and
 prove repeated evaluation creates only one occurrence and one notification per
@@ -246,13 +270,13 @@ recipient.
 
 ## Reminders worth shipping with
 
-| Reminder | Trigger | Audience | Delivery behavior |
-| --- | --- | --- | --- |
-| Positions not submitted | −72h before submission deadline | startups matching `silent` | notify, escalate after 48h |
-| Selection deadline approaching | −72h before selection closes | startups with no selections | notify |
-| Hours at risk | state: `hours_at_risk` | that startup, then QSTP | notify, escalate |
-| Exception awaiting decision | state: pending > 24h | QSTP operations | notify |
-| Candidate conflict raised | event: second claim | QSTP | notify immediately |
-| Documents awaiting verification | state: submitted > 24h | QSTP operations | digest |
-| Candidate availability unknown | state: `unconfirmed` and in a pool | candidate | notify |
-| Pool untouched | state: shared > 5 days, none reviewed | startup | notify, escalate |
+| Reminder                        | Trigger                               | Audience                    | Delivery behavior          |
+| ------------------------------- | ------------------------------------- | --------------------------- | -------------------------- |
+| Positions not submitted         | −72h before submission deadline       | startups matching `silent`  | notify, escalate after 48h |
+| Selection deadline approaching  | −72h before selection closes          | startups with no selections | notify                     |
+| Hours at risk                   | state: `hours_at_risk`                | that startup, then QSTP     | notify, escalate           |
+| Exception awaiting decision     | state: pending > 24h                  | QSTP operations             | notify                     |
+| Candidate conflict raised       | event: second claim                   | QSTP                        | notify immediately         |
+| Documents awaiting verification | state: submitted > 24h                | QSTP operations             | digest                     |
+| Candidate availability unknown  | state: `unconfirmed` and in a pool    | candidate                   | notify                     |
+| Pool untouched                  | state: shared > 5 days, none reviewed | startup                     | notify, escalate           |

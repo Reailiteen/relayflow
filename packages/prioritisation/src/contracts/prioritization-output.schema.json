@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qstp.example/contracts/prioritization-output.schema.json",
+  "title": "QSTP V3 portfolio draft output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "policyVersion", "runStatus", "allocationMode", "allocationStrategy",
+    "cycle", "budget", "counts", "startups", "waitlist", "signals"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "policyVersion": { "type": "string", "minLength": 1 },
+    "runStatus": { "enum": ["complete_draft", "partial_draft"] },
+    "allocationMode": { "enum": ["priority", "broad", "distribution"] },
+    "allocationStrategy": { "type": "string", "minLength": 1 },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleId", "submissionCutoffDate", "budgetHours"],
+      "properties": {
+        "cycleId": { "type": "string", "minLength": 1 },
+        "submissionCutoffDate": { "type": ["string", "null"], "format": "date" },
+        "budgetHours": { "type": "number", "minimum": 0 }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availableHours", "maximumQualifiedHours", "proposedHours", "residualHours", "withinBudget"],
+      "properties": {
+        "availableHours": { "type": "number", "minimum": 0 },
+        "maximumQualifiedHours": { "type": "number", "minimum": 0 },
+        "proposedHours": { "type": "number", "minimum": 0 },
+        "residualHours": { "type": "number", "minimum": 0 },
+        "withinBudget": { "type": "boolean" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["submitted", "statuses", "funded", "waitlisted", "finalTiers"],
+      "properties": {
+        "submitted": { "type": "integer", "minimum": 0 },
+        "statuses": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "funded": { "type": "integer", "minimum": 0 },
+        "waitlisted": { "type": "integer", "minimum": 0 },
+        "finalTiers": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
+    "startups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/startupResult" }
+    },
+    "waitlist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["startupId", "startupName", "score", "rank", "waitlistRank", "displayOrder", "tieGroupSize", "orderStatus", "reason"],
+        "properties": {
+          "startupId": { "type": "string" },
+          "startupName": { "type": "string" },
+          "score": { "type": "number" },
+          "rank": { "type": "integer", "minimum": 1 },
+          "waitlistRank": { "type": "integer", "minimum": 1 },
+          "displayOrder": { "type": "integer", "minimum": 1 },
+          "tieGroupSize": { "type": "integer", "minimum": 1 },
+          "orderStatus": { "enum": ["resolved_by_score", "tied_requires_qstp_resolution"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "signals": { "type": "array", "items": { "$ref": "#/$defs/taggedObject" } },
+    "distribution": { "type": "object", "additionalProperties": true }
+  },
+  "$defs": {
+    "nullableNumber": { "type": ["number", "null"] },
+    "taggedObject": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "type": "string", "minLength": 1 } },
+      "additionalProperties": true
+    },
+    "startupResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startupId", "startupName", "status", "blockers", "score", "breakdown", "historySource",
+        "positionResults", "rank", "maximumHours", "finalHours", "waitlistRank", "adjustments", "signals"
+      ],
+      "properties": {
+        "startupId": { "type": "string", "minLength": 1 },
+        "startupName": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["scored", "needs_information", "awaiting_manual_scores", "not_ready", "not_fundable"] },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/taggedObject" } },
+        "score": { "$ref": "#/$defs/nullableNumber" },
+        "breakdown": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+        "historySource": { "type": ["string", "null"] },
+        "positionResults": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "rank": { "type": ["integer", "null"], "minimum": 1 },
+        "maximumHours": { "$ref": "#/$defs/nullableNumber" },
+        "finalHours": { "$ref": "#/$defs/nullableNumber" },
+        "waitlistRank": { "type": ["integer", "null"], "minimum": 1 },
+        "adjustments": { "type": "array", "items": { "$ref": "#/$defs/taggedObject" } },
+        "signals": { "type": "array", "items": { "$ref": "#/$defs/taggedObject" } }
+      }
+    }
+  }
+}

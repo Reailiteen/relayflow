@@ -19,6 +19,7 @@
     "@relayflow/entities": "workspace:*",
     "@relayflow/logger": "workspace:*",
     "@relayflow/ports": "workspace:*",
+    "@relayflow/prioritisation": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

@@ -10,14 +10,24 @@ describe('fixture repository contracts', () => {
     if (!cycles.ok) return;
     const first = cycles.data.find((row) => row.id === ids.cycle)!;
     const second = cycles.data.find((row) => row.id !== ids.cycle)!;
-    const [firstPositions, secondPositions, secondStartups] = await Promise.all([
-      repos.positions.listForCycle(first.id),
-      repos.positions.listForCycle(second.id),
-      repos.startups.listForCycle(second.id),
-    ]);
+    const [firstPositions, secondPositions, firstStartups, secondStartups, secondIntents, firstIntents] =
+      await Promise.all([
+        repos.positions.listForCycle(first.id),
+        repos.positions.listForCycle(second.id),
+        repos.startups.listForCycle(first.id),
+        repos.startups.listForCycle(second.id),
+        repos.positionIntents.listForCycle(second.id),
+        repos.positionIntents.listForCycle(first.id),
+      ]);
     expect(firstPositions.ok && firstPositions.data.length).toBeGreaterThan(0);
+    // The Autumn cycle has not reached the positions stage, so it has none —
+    // which is the isolation this test is really about.
     expect(secondPositions.ok && secondPositions.data).toEqual([]);
-    expect(secondStartups.ok && secondStartups.data).toHaveLength(3);
+    expect(secondStartups.ok && secondStartups.data.length).toBeGreaterThan(0);
+    expect(firstStartups.ok && firstStartups.data.length).toBeGreaterThan(0);
+    // Intents run the other way round: they belong to the cycle in `allocation`.
+    expect(secondIntents.ok && secondIntents.data.length).toBeGreaterThan(0);
+    expect(firstIntents.ok && firstIntents.data).toEqual([]);
   });
 
   it('acknowledges a published allocation idempotently and appends one immutable event', async () => {
@@ -338,6 +348,19 @@ describe('fixture repository contracts', () => {
       declarationAccepted: true,
       documentOpenedAt: '2026-03-18T10:40:00.000Z',
       signedAt: '2026-03-18T10:41:00.000Z',
+    });
+    // Two of three. The candidate's own signature is still outstanding, and that
+    // alone must hold the placement back.
+    const twoOfThree = await repos.placements.markReady(placement.id, '2026-03-18T10:45:00.000Z');
+    expect(twoOfThree.ok).toBe(false);
+    await repos.requirements.sign({
+      placementId: placement.id,
+      kind: 'candidate_agreement',
+      signerId: ids.userLayla,
+      signerName: 'Layla Haddad',
+      declarationAccepted: true,
+      documentOpenedAt: '2026-03-18T10:50:00.000Z',
+      signedAt: '2026-03-18T10:51:00.000Z',
     });
     await repos.placements.setReadiness({
       placementId: placement.id,

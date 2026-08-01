@@ -5,6 +5,8 @@ export * from './startup/startup';
 export * from './allocation/hours';
 export * from './allocation/allocation';
 export * from './position/position';
+export * from './position/position-intent';
+export * from './prioritisation/rating';
 export * from './candidate/candidate';
 export * from './interview/interview';
 export * from './selection/selection';

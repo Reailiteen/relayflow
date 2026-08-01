@@ -25,6 +25,14 @@ export const CAPABILITIES = [
   'allocation:decide',
   'allocation:override',
   'allocation:acknowledge',
+  /**
+   * Running the engine is arithmetic over a whole cohort's budget. Rating one
+   * startup is judgement about one startup. Deliberately separate capabilities,
+   * so a reviewer can be asked to rate without also being handed the button
+   * that reshapes the programme's funding.
+   */
+  'rating:read_all',
+  'rating:submit',
   'prioritization:run',
 
   // ── Positions (Stage 2) ──────────────────────────────────────────────────
@@ -100,6 +108,8 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'allocation:read_all',
     'allocation:decide',
     'allocation:override',
+    'rating:read_all',
+    'rating:submit',
     'prioritization:run',
     'position:read_all',
     'position:review',
@@ -124,6 +134,8 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'startup:read_all',
     'allocation:read_all',
     'allocation:decide',
+    'rating:read_all',
+    'rating:submit',
     'prioritization:run',
     'position:read_all',
     'position:review',
@@ -148,6 +160,8 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'cycle:read',
     'startup:read_all',
     'allocation:read_all',
+    // Reads the reasoning behind a funding decision; cannot supply any of it.
+    'rating:read_all',
     'position:read_all',
     'candidate:read_all',
     'task:read_all',

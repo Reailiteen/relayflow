@@ -20,8 +20,7 @@ import type {
   UserId,
   FallbackCaseId,
 } from '../shared/ids';
-import { recommendedTier } from '../allocation/allocation';
-import { HOUR_TIERS, type HourTier } from '../allocation/hours';
+import type { HourTier } from '../allocation/hours';
 import type { Position, PositionStatus } from '../position/position';
 
 export type JsonValue =
@@ -77,13 +76,57 @@ export interface CycleParticipation {
 
 export type PrioritizationRunStatus = 'draft' | 'confirmed' | 'superseded';
 
-export interface PrioritizationProposal {
-  readonly participationId: ParticipationId;
+/**
+ * A startup's outcome in one run — including the ones that were never scored.
+ *
+ * `status` is the field that must never be collapsed. A startup blocked for
+ * missing information and a startup scored at 12 both end up with zero hours,
+ * and the difference between them is the entire point: one needs chasing, the
+ * other needs nothing. Only `scored` outcomes may become allocations.
+ */
+export interface PrioritizationOutcome {
+  readonly participationId: ParticipationId | null;
+  readonly startupId: StartupId;
+  readonly status: PrioritizationOutcomeStatus;
+  readonly score: number | null;
+  readonly breakdown: Readonly<Record<string, number>> | null;
+  readonly historySource: string | null;
+  readonly rank: number | null;
+  readonly requestedHours: number;
+  readonly maximumHours: HourTier | null;
+  readonly proposedHours: HourTier | null;
+  /** Set when QSTP changes the proposal before confirming. Needs a reason. */
+  readonly adjustedHours: HourTier | null;
+  readonly adjustmentReason: string | null;
+  readonly waitlistRank: number | null;
+  /** True when this startup ties another and the order is not the engine's to pick. */
+  readonly requiresTieResolution: boolean;
+  readonly blockers: readonly JsonValue[];
+  readonly signals: readonly JsonValue[];
+  readonly adjustments: readonly JsonValue[];
+}
+
+export type PrioritizationOutcomeStatus =
+  | 'scored'
+  | 'needs_information'
+  | 'awaiting_manual_scores'
+  | 'not_ready'
+  | 'not_fundable';
+
+export interface PrioritizationWaitlistEntry {
   readonly startupId: StartupId;
   readonly score: number;
-  readonly requestedHours: number;
-  readonly proposedHours: HourTier;
-  readonly rank: number;
+  /** Shared across a tie group. Display order must not decide who is offered hours. */
+  readonly waitlistRank: number;
+  readonly tieGroupSize: number;
+  readonly requiresTieResolution: boolean;
+  readonly reason: string;
+}
+
+/** The hours this outcome would actually write, or null if it writes none. */
+export function effectiveHours(outcome: PrioritizationOutcome): HourTier | null {
+  if (outcome.status !== 'scored') return null;
+  return outcome.adjustedHours ?? outcome.proposedHours;
 }
 
 export interface PrioritizationRun {
@@ -91,55 +134,25 @@ export interface PrioritizationRun {
   readonly cycleId: CycleId;
   readonly version: number;
   readonly status: PrioritizationRunStatus;
+  /** `partial_draft` means at least one startup never reached an outcome. */
+  readonly completeness: 'complete_draft' | 'partial_draft';
+  readonly policyVersion: string;
+  readonly allocationMode: 'priority' | 'broad' | 'distribution';
+  readonly allocationStrategy: string;
   readonly budgetHours: number;
+  readonly maximumQualifiedHours: number;
   readonly proposedHours: number;
-  readonly proposals: readonly PrioritizationProposal[];
+  readonly residualHours: number;
+  /** The engine's own verdict — do not re-derive it by summing the outcomes. */
+  readonly withinBudget: boolean;
+  readonly outcomes: readonly PrioritizationOutcome[];
+  readonly waitlist: readonly PrioritizationWaitlistEntry[];
+  readonly signals: readonly JsonValue[];
+  /** Frozen. Re-reading an old run must not show today's policy. */
+  readonly policySnapshot: JsonValue;
   readonly createdBy: UserId;
   readonly createdAt: string;
   readonly confirmedAt: string | null;
-}
-
-const descendingTiers = [...HOUR_TIERS].sort((a, b) => b - a);
-
-/** Deterministic, replaceable fixture prioritization that always fits the budget. */
-export function fitPrioritization(
-  participations: readonly CycleParticipation[],
-  budgetHours: number,
-): PrioritizationProposal[] {
-  const ranked = participations
-    .filter((row) => row.status === 'accepted' && row.operatorScore !== null)
-    .sort(
-      (a, b) =>
-        (b.operatorScore ?? 0) - (a.operatorScore ?? 0) ||
-        a.createdAt.localeCompare(b.createdAt) ||
-        a.startupId.localeCompare(b.startupId),
-    );
-
-  const proposals = ranked.map((row, index): PrioritizationProposal => {
-    const recommended = recommendedTier(row.operatorScore ?? 0);
-    const requestCeiling = [...descendingTiers].find((tier) => tier <= row.requestedTotalHours) ?? 0;
-    return {
-      participationId: row.id,
-      startupId: row.startupId,
-      score: row.operatorScore ?? 0,
-      requestedHours: row.requestedTotalHours,
-      proposedHours: Math.min(recommended, requestCeiling) as HourTier,
-      rank: index + 1,
-    };
-  });
-
-  let total = proposals.reduce((sum, row) => sum + row.proposedHours, 0);
-  // Step the lowest-ranked proposals down one tier at a time until the budget fits.
-  for (let index = proposals.length - 1; total > budgetHours && index >= 0; ) {
-    const proposal = proposals[index];
-    if (!proposal) break;
-    const tierIndex = descendingTiers.indexOf(proposal.proposedHours);
-    const next = descendingTiers[tierIndex + 1] ?? 0;
-    total -= proposal.proposedHours - next;
-    proposals[index] = { ...proposal, proposedHours: next };
-    if (next === 0) index -= 1;
-  }
-  return proposals;
 }
 
 export const POSITION_LIFECYCLE: readonly PositionStatus[] = [
@@ -322,10 +335,21 @@ export interface RequirementSubmission {
   readonly correctionReason: string | null;
 }
 
+/**
+ * The three parties to a placement each sign for themselves.
+ *
+ * The candidate signs too, and that is not a formality: they are the person
+ * whose hours, dates and supervisor the agreement fixes. A placement that QSTP
+ * and the startup have signed but the candidate has not is an arrangement made
+ * about someone rather than with them, so `candidate_agreement` blocks Ready to
+ * Start exactly like the other two.
+ */
+export type SignatureKind = 'qstp_agreement' | 'startup_agreement' | 'candidate_agreement';
+
 export interface PlacementSignature {
   readonly id: SignatureId;
   readonly placementId: PlacementId;
-  readonly kind: 'qstp_agreement' | 'startup_agreement';
+  readonly kind: SignatureKind;
   readonly signerId: UserId;
   readonly signerName: string;
   readonly declarationAccepted: boolean;
@@ -354,6 +378,7 @@ export function placementReadinessBlockers(facts: PlacementReadinessFacts): stri
   const signatureKinds = new Set(facts.signatures.map((row) => row.kind));
   if (!signatureKinds.has('qstp_agreement')) blockers.push('QSTP agreement is unsigned.');
   if (!signatureKinds.has('startup_agreement')) blockers.push('Startup agreement is unsigned.');
+  if (!signatureKinds.has('candidate_agreement')) blockers.push('Candidate agreement is unsigned.');
   if (!facts.candidateReady) blockers.push('Candidate readiness is unconfirmed.');
   if (!facts.startupReady) blockers.push('Startup readiness is unconfirmed.');
   if (!facts.detailsFinal) blockers.push('Placement dates, hours, and supervisor are not final.');

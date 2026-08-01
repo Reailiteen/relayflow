@@ -29,9 +29,14 @@
 const ADAPTERS_AND_UP = ['data', 'fixtures', 'logic', 'ui-web', 'ui-native'];
 
 const FORBIDDEN = {
-  core: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
-  logger: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
-  tokens: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  core: ['prioritisation', 'entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  logger: ['prioritisation', 'entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  tokens: ['prioritisation', 'entities', 'ports', 'access', ...ADAPTERS_AND_UP],
+  // Versioned scoring/allocation policy. It sits below entities so a stored run
+  // can be typed by the engine's own output rather than a re-declared copy of
+  // it, and it deliberately knows nothing about branded ids or storage — that
+  // independence is what keeps its golden replay fixture meaningful.
+  prioritisation: ['entities', 'ports', 'access', ...ADAPTERS_AND_UP],
   entities: ['ports', 'access', ...ADAPTERS_AND_UP],
   ports: ['access', ...ADAPTERS_AND_UP],
   access: ['ports', ...ADAPTERS_AND_UP],

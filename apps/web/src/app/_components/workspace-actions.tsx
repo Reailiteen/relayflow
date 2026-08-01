@@ -50,16 +50,75 @@ function ActionButton({
   );
 }
 
+/**
+ * Publishing an incomplete draft leaves every unevaluated startup with nothing,
+ * so it cannot be one click. The reason is required by the use-case too — this
+ * is the UI catching up with a rule the server already enforces.
+ */
+function PublishAllocations({
+  cycleId,
+  draftRunId,
+  unevaluatedCount,
+}: {
+  cycleId: CycleId;
+  draftRunId: PrioritizationRunId;
+  unevaluatedCount: number;
+}) {
+  const [reason, setReason] = useState('');
+  const incomplete = unevaluatedCount > 0;
+
+  if (!incomplete) {
+    return (
+      <ActionButton run={() => publishAllocationsAction({ cycleId, runId: draftRunId })} variant="primary">
+        Publish allocations
+      </ActionButton>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <p className="text-[11px] text-critical-text">
+        {unevaluatedCount} startup{unevaluatedCount === 1 ? ' has' : 's have'} not been
+        evaluated. Publishing now leaves {unevaluatedCount === 1 ? 'it' : 'them'} with no
+        allocation.
+      </p>
+      <textarea
+        className="w-72 rounded-control border border-hairline bg-surface px-3 py-2 text-xs"
+        rows={2}
+        value={reason}
+        placeholder="Why publish without them?"
+        onChange={(event) => setReason(event.target.value)}
+        aria-label="Reason for publishing an incomplete draft"
+      />
+      <ActionButton
+        variant="danger"
+        run={() =>
+          publishAllocationsAction({
+            cycleId,
+            runId: draftRunId,
+            acknowledgeIncomplete: true,
+            incompleteReason: reason,
+          })
+        }
+      >
+        Publish without them
+      </ActionButton>
+    </div>
+  );
+}
+
 export function AllocationActions({
   cycleId,
   mode,
   acknowledged,
   draftRunId,
+  unevaluatedCount = 0,
 }: {
   cycleId: CycleId;
   mode: 'qstp' | 'startup';
   acknowledged: boolean;
   draftRunId: PrioritizationRunId | undefined;
+  unevaluatedCount?: number;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -69,9 +128,11 @@ export function AllocationActions({
         </ActionButton>
       ) : null}
       {mode === 'qstp' && draftRunId ? (
-        <ActionButton run={() => publishAllocationsAction({ cycleId, runId: draftRunId })} variant="primary">
-          Publish allocations
-        </ActionButton>
+        <PublishAllocations
+          cycleId={cycleId}
+          draftRunId={draftRunId}
+          unevaluatedCount={unevaluatedCount}
+        />
       ) : null}
       {mode === 'startup' && !acknowledged ? (
         <ActionButton run={() => acknowledgeAllocationAction({ cycleId })} variant="primary">

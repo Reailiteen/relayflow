@@ -1,18 +1,32 @@
 import 'server-only';
+import { getSupabaseServerClient, supabaseEnv } from './supabase';
 
 /**
- * Stand-in authentication.
+ * Authentication.
  *
- * There is no password check, no session token and no user table lookup. Signing
- * in maps an email to one of the seeded personas and records it in a cookie.
+ * Two paths, and the sign-in page says which one is live:
  *
- * It is deliberately concentrated here so that replacing it is a single file:
- * `personaForEmail` becomes a credential check, and the cookie becomes a real
- * session. Everything downstream already reads identity from `getActor()`, so
- * nothing else has to change.
+ *   Supabase configured — a real credential check. A wrong password is refused,
+ *   the session is a signed JWT in an httpOnly cookie, and `proxy.ts` refreshes
+ *   it before it expires.
+ *
+ *   Not configured — the email is matched to a seeded persona and recorded in a
+ *   cookie. No password is checked, and the page says so plainly.
+ *
+ * Identity resolves through `DEMO_ACCOUNTS` in both cases, because the
+ * repositories are still fixtures and a Supabase user id has no fixture startup
+ * behind it. When the data cutover lands this mapping becomes a read of
+ * `qstp_staff` / `startup_members` / `candidates`, and nothing else moves.
  */
 
-/** Seeded accounts, keyed by the email each persona actually has. */
+/**
+ * One password for every seeded account.
+ *
+ * Only defensible because these are fictional people in a demo project holding
+ * no real data. It must not survive contact with a real cohort.
+ */
+export const DEMO_PASSWORD = 'Pass123';
+
 export const DEMO_ACCOUNTS = [
   {
     email: 'noor@qstp.org.qa',
@@ -74,6 +88,10 @@ export const DEMO_ACCOUNTS = [
 
 export type DemoAccount = (typeof DEMO_ACCOUNTS)[number];
 
+export function isSupabaseAuthConfigured(): boolean {
+  return supabaseEnv() !== null;
+}
+
 /** Matches an email to a seeded persona. Case- and whitespace-insensitive. */
 export function accountForEmail(email: string): DemoAccount | null {
   const normalised = email.trim().toLowerCase();
@@ -82,4 +100,60 @@ export function accountForEmail(email: string): DemoAccount | null {
 
 export function accountForPersona(persona: string): DemoAccount | null {
   return DEMO_ACCOUNTS.find((account) => account.persona === persona) ?? null;
+}
+
+export interface SignInOutcome {
+  readonly ok: boolean;
+  readonly error: string | null;
+  readonly account: DemoAccount | null;
+}
+
+/**
+ * Check credentials.
+ *
+ * The failure message is the same whether the email is unknown or the password
+ * is wrong. Distinguishing them turns the form into a way to enumerate who has
+ * an account.
+ */
+export async function signIn(email: string, password: string): Promise<SignInOutcome> {
+  const account = accountForEmail(email);
+
+  const supabase = await getSupabaseServerClient();
+  if (!supabase) {
+    // Fixtures: there is no credential to check, so identity is all there is.
+    return account
+      ? { ok: true, error: null, account }
+      : { ok: false, error: 'No seeded account uses that email.', account: null };
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) {
+    return { ok: false, error: 'That email and password do not match an account.', account: null };
+  }
+  if (!account) {
+    // Authenticated, but nothing in the fixtures answers to this person. Saying
+    // so beats dropping them on an empty dashboard.
+    return {
+      ok: false,
+      error: 'Signed in, but this account has no seeded profile yet.',
+      account: null,
+    };
+  }
+  return { ok: true, error: null, account };
+}
+
+export async function signOut(): Promise<void> {
+  const supabase = await getSupabaseServerClient();
+  if (supabase) await supabase.auth.signOut();
+}
+
+/** The signed-in user's email, or null when there is no Supabase session. */
+export async function currentEmail(): Promise<string | null> {
+  const supabase = await getSupabaseServerClient();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getUser();
+  return data.user?.email ?? null;
 }

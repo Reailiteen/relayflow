@@ -89,46 +89,7 @@ import {
   confirmAvailabilityAction,
 } from "@/server/actions";
 import type { Portal } from "./cycle-workspace";
-
-type ActionResult = { ok: boolean; message?: string };
-
-function Feedback({
-  value,
-}: {
-  value: { text: string; error: boolean } | null;
-}) {
-  if (!value) return null;
-  return (
-    <div
-      role="status"
-      className={`rounded-control border px-4 py-3 text-sm ${value.error ? "border-critical/20 bg-critical-subtle text-critical-text" : "border-positive/20 bg-positive-subtle text-positive-text"}`}
-    >
-      {value.text}
-    </div>
-  );
-}
-
-function usePanelAction(close?: () => void) {
-  const [pending, startTransition] = useTransition();
-  const [feedback, setFeedback] = useState<{
-    text: string;
-    error: boolean;
-  } | null>(null);
-  const run = (action: () => Promise<ActionResult>) => {
-    setFeedback(null);
-    startTransition(async () => {
-      const result = await action();
-      setFeedback({
-        text: result.ok
-          ? "Saved."
-          : (result.message ?? "Could not complete this action."),
-        error: !result.ok,
-      });
-      if (result.ok) close?.();
-    });
-  };
-  return { pending, feedback, run, clear: () => setFeedback(null) };
-}
+import { Feedback, usePanelAction } from "./panel-action";
 
 export function CandidateAvailabilityPanel({
   cycleId,
@@ -217,17 +178,22 @@ export function AllocationReviewPanel({
   startups: readonly Startup[];
 }) {
   const [open, setOpen] = useState(false);
-  const [startup, setStartup] = useState(run.proposals[0]?.startupId ?? "");
-  const proposal = run.proposals.find((row) => row.startupId === startup);
-  const [hours, setHours] = useState(String(proposal?.proposedHours ?? 0));
+  // Only a scored startup has a tier to move. The rest are blocked on work
+  // somebody has to do, and offering them a tier dropdown would suggest the
+  // blocker can be adjusted away.
+  const scored = run.outcomes.filter((row) => row.status === "scored");
+  const blocked = run.outcomes.filter((row) => row.status !== "scored");
+  const [startup, setStartup] = useState(scored[0]?.startupId ?? "");
+  const outcome = scored.find((row) => row.startupId === startup);
+  const [hours, setHours] = useState(String(outcome?.proposedHours ?? 0));
   const [reason, setReason] = useState("");
   const action = usePanelAction(() => setOpen(false));
+  const nameOf = (id: string) =>
+    startups.find((item) => item.id === id)?.name ?? id;
   const changeStartup = (id: string) => {
     setStartup(id);
     setHours(
-      String(
-        run.proposals.find((row) => row.startupId === id)?.proposedHours ?? 0,
-      ),
+      String(scored.find((row) => row.startupId === id)?.proposedHours ?? 0),
     );
   };
   return (
@@ -237,7 +203,9 @@ export function AllocationReviewPanel({
       </Button>
       <SidePanelContent
         title={`Prioritization draft v${run.version}`}
-        description={`${run.proposedHours} of ${run.budgetHours} weekly hours proposed.`}
+        description={`${run.proposedHours} of ${run.budgetHours} weekly hours proposed${
+          run.residualHours > 0 ? `, ${run.residualHours}h unspent` : ""
+        }.`}
         width="lg"
       >
         <SidePanelBody className="space-y-5">
@@ -253,30 +221,64 @@ export function AllocationReviewPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-hairline">
-                {run.proposals.map((row) => (
+                {scored.map((row) => (
                   <tr key={row.startupId}>
                     <td className="px-3 py-2">{row.rank}</td>
                     <td className="font-medium text-ink">
-                      {startups.find((item) => item.id === row.startupId)
-                        ?.name ?? row.startupId}
+                      {nameOf(row.startupId)}
+                      {row.requiresTieResolution ? (
+                        <span className="ml-2 text-ink-3">tied</span>
+                      ) : null}
                     </td>
                     <td>{row.score}</td>
                     <td>{row.requestedHours}h</td>
-                    <td>{row.proposedHours}h</td>
+                    <td>
+                      {row.adjustedHours ?? row.proposedHours}h
+                      {row.proposedHours !== null &&
+                      row.maximumHours !== null &&
+                      row.proposedHours < row.maximumHours ? (
+                        <span className="ml-1 text-ink-3">
+                          (from {row.maximumHours}h)
+                        </span>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/*
+            Blocked startups are shown, never silently dropped. Each of these is
+            a different piece of work for a different person, and publishing
+            without seeing them is how a startup falls out of a cycle unnoticed.
+          */}
+          {blocked.length > 0 ? (
+            <div className="rounded-control border border-hairline px-4 py-3 text-xs leading-5">
+              <p className="font-medium text-ink">
+                {blocked.length} startup{blocked.length === 1 ? "" : "s"} will
+                receive no allocation
+              </p>
+              <ul className="mt-2 space-y-1 text-ink-2">
+                {blocked.map((row) => (
+                  <li key={row.startupId}>
+                    <span className="text-ink">{nameOf(row.startupId)}</span>
+                    {" — "}
+                    {row.status.replace(/_/g, " ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <SelectField
             label="Startup to adjust"
             value={startup}
             onChange={(event) => changeStartup(event.target.value)}
           >
-            {run.proposals.map((row) => (
+            {scored.map((row) => (
               <option key={row.startupId} value={row.startupId}>
-                {startups.find((item) => item.id === row.startupId)?.name ??
-                  row.startupId}
+                {nameOf(row.startupId)}
               </option>
             ))}
           </SelectField>

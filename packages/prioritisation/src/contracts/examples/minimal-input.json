@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "1.0.0",
+  "cycle": {
+    "cycleId": "fixture-cycle-001",
+    "submissionCutoffDate": "2026-08-01",
+    "budgetHours": 130
+  },
+  "policy": {
+    "version": "prioritization-v3-experiment-2",
+    "ratingMaximum": 4,
+    "neutralHistoryPoints": 5,
+    "minimumWeeklySupervisionMinutes": 30,
+    "minimumRoleValueRating": 2,
+    "buckets": [60, 40, 30, 20, 0],
+    "thresholds": [
+      { "minScore": 85, "hours": 60 },
+      { "minScore": 70, "hours": 40 },
+      { "minScore": 50, "hours": 30 },
+      { "minScore": 35, "hours": 20 },
+      { "minScore": 0, "hours": 0 }
+    ],
+    "nearTieMargin": 1,
+    "nearThresholdMargin": 2
+  },
+  "allocation": {
+    "mode": "priority"
+  },
+  "startups": [
+    {
+      "startupId": "startup-a",
+      "startupName": "Apex Analytics",
+      "extraction": {
+        "contractVersion": "synthetic-startup-extraction-v1",
+        "fields": [
+          {
+            "fieldPath": "positions",
+            "status": "supported",
+            "resolvedValue": [{
+              "id": "role-a",
+              "title": "Data Intern",
+              "category": "data",
+              "expectedDeliverable": "Validated analytics dashboard",
+              "learningOutcomes": ["Data validation", "Dashboard design"],
+              "workMode": "hybrid",
+              "supervisor": { "name": "Aisha Karim" },
+              "weeklySupervisionMinutes": 60,
+              "maximumInterns": 1,
+              "resourcesReady": true,
+              "onboardingReady": true
+            }]
+          },
+          { "fieldPath": "platformHistory", "status": "missing", "resolvedValue": null }
+        ]
+      },
+      "qstpRatings": {
+        "progressAgainstStage": 4,
+        "tractionStrength": 4,
+        "valueToStartup": 4,
+        "valueToIntern": 4,
+        "qstpQatarAlignment": 4,
+        "researchEcosystemContribution": 4
+      }
+    },
+    {
+      "startupId": "startup-b",
+      "startupName": "Beacon Health",
+      "extraction": {
+        "contractVersion": "synthetic-startup-extraction-v1",
+        "fields": [
+          {
+            "fieldPath": "positions",
+            "status": "supported",
+            "resolvedValue": [{
+              "id": "role-b",
+              "title": "Research Intern",
+              "category": "research",
+              "expectedDeliverable": "Clinical evidence map",
+              "learningOutcomes": ["Literature review", "Evidence synthesis"],
+              "workMode": "onsite",
+              "supervisor": { "name": "Bilal Noor" },
+              "weeklySupervisionMinutes": 45,
+              "maximumInterns": 1,
+              "resourcesReady": true,
+              "onboardingReady": true
+            }]
+          },
+          { "fieldPath": "platformHistory", "status": "not_applicable", "resolvedValue": null }
+        ]
+      },
+      "qstpRatings": {
+        "progressAgainstStage": 3,
+        "tractionStrength": 3,
+        "valueToStartup": 3,
+        "valueToIntern": 3,
+        "qstpQatarAlignment": 3,
+        "researchEcosystemContribution": 3
+      }
+    },
+    {
+      "startupId": "startup-c",
+      "startupName": "Circuit Works",
+      "extraction": {
+        "contractVersion": "synthetic-startup-extraction-v1",
+        "fields": [
+          {
+            "fieldPath": "positions",
+            "status": "supported",
+            "resolvedValue": [{
+              "id": "role-c",
+              "title": "Engineering Intern",
+              "category": "engineering",
+              "expectedDeliverable": "Tested sensor prototype",
+              "learningOutcomes": ["Hardware testing", "Technical reporting"],
+              "workMode": "onsite",
+              "supervisor": { "name": "Cora Said" },
+              "weeklySupervisionMinutes": 60,
+              "maximumInterns": 2,
+              "resourcesReady": true,
+              "onboardingReady": true
+            }]
+          },
+          { "fieldPath": "platformHistory", "status": "missing", "resolvedValue": null }
+        ]
+      },
+      "qstpRatings": {
+        "progressAgainstStage": 3,
+        "tractionStrength": 3,
+        "valueToStartup": 3,
+        "valueToIntern": 3,
+        "qstpQatarAlignment": 3,
+        "researchEcosystemContribution": 3
+      }
+    },
+    {
+      "startupId": "startup-d",
+      "startupName": "Delta Energy",
+      "extraction": {
+        "contractVersion": "synthetic-startup-extraction-v1",
+        "fields": [
+          {
+            "fieldPath": "positions",
+            "status": "supported",
+            "resolvedValue": [{
+              "id": "role-d",
+              "title": "Operations Intern",
+              "category": "operations",
+              "expectedDeliverable": "Documented pilot workflow",
+              "learningOutcomes": ["Process mapping", "Pilot operations"],
+              "workMode": "hybrid",
+              "supervisor": { "name": "Dana Omar" },
+              "weeklySupervisionMinutes": 30,
+              "maximumInterns": 1,
+              "resourcesReady": true,
+              "onboardingReady": true
+            }]
+          },
+          { "fieldPath": "platformHistory", "status": "missing", "resolvedValue": null }
+        ]
+      },
+      "qstpRatings": {
+        "progressAgainstStage": 2,
+        "tractionStrength": 2,
+        "valueToStartup": 3,
+        "valueToIntern": 3,
+        "qstpQatarAlignment": 2,
+        "researchEcosystemContribution": 2
+      }
+    },
+    {
+      "startupId": "startup-e",
+      "startupName": "Echo Environment",
+      "extraction": {
+        "contractVersion": "synthetic-startup-extraction-v1",
+        "fields": [
+          {
+            "fieldPath": "positions",
+            "status": "supported",
+            "resolvedValue": [{
+              "id": "role-e",
+              "title": "Sustainability Intern",
+              "category": "research",
+              "expectedDeliverable": "Waste baseline report",
+              "learningOutcomes": ["Field research", "Impact measurement"],
+              "workMode": "onsite",
+              "supervisor": { "name": "Eman Ali" },
+              "weeklySupervisionMinutes": 60,
+              "maximumInterns": 1,
+              "resourcesReady": false,
+              "onboardingReady": true
+            }]
+          },
+          { "fieldPath": "platformHistory", "status": "missing", "resolvedValue": null }
+        ]
+      },
+      "qstpRatings": {
+        "progressAgainstStage": 4,
+        "tractionStrength": 4,
+        "valueToStartup": 4,
+        "valueToIntern": 4,
+        "qstpQatarAlignment": 4,
+        "researchEcosystemContribution": 4
+      }
+    }
+  ]
+}

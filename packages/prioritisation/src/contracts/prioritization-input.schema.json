@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qstp.example/contracts/prioritization-input.schema.json",
+  "title": "QSTP V3 portfolio draft input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cycle", "policy", "allocation", "startups"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleId", "budgetHours"],
+      "properties": {
+        "cycleId": { "type": "string", "minLength": 1 },
+        "submissionCutoffDate": { "type": ["string", "null"], "format": "date" },
+        "budgetHours": { "type": "number", "minimum": 0 }
+      }
+    },
+    "policy": { "$ref": "prioritization-policy.schema.json" },
+    "allocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["priority", "broad", "distribution"] },
+        "targetShares": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[0-9]+(?:\\.[0-9]+)?$" },
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "allowedCountDeviationPerTier": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [{
+        "if": { "properties": { "mode": { "const": "distribution" } }, "required": ["mode"] },
+        "then": { "required": ["targetShares"] }
+      }]
+    },
+    "startups": {
+      "type": "array",
+      "items": { "$ref": "https://qstp.example/contracts/prioritization-input.schema.json#/$defs/startup" }
+    }
+  },
+  "$defs": {
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startupId", "startupName", "extraction", "qstpRatings"],
+      "properties": {
+        "startupId": { "type": "string", "minLength": 1 },
+        "startupName": { "type": "string", "minLength": 1 },
+        "extraction": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["fields"],
+              "properties": {
+                "contractVersion": { "type": "string" },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "required": ["fieldPath", "status", "resolvedValue"],
+                    "properties": {
+                      "fieldPath": { "type": "string", "minLength": 1 },
+                      "status": {
+                        "enum": ["supported", "missing", "conflicting", "stale", "not_applicable", "invalid"]
+                      },
+                      "resolvedValue": true
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "qstpRatings": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "https://qstp.example/contracts/prioritization-input.schema.json#/$defs/ratings" }
+          ]
+        }
+      }
+    },
+    "ratings": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "progressAgainstStage",
+        "tractionStrength",
+        "valueToStartup",
+        "valueToIntern",
+        "qstpQatarAlignment",
+        "researchEcosystemContribution"
+      ],
+      "properties": {
+        "progressAgainstStage": { "type": "integer", "minimum": 0 },
+        "tractionStrength": { "type": "integer", "minimum": 0 },
+        "valueToStartup": { "type": "integer", "minimum": 0 },
+        "valueToIntern": { "type": "integer", "minimum": 0 },
+        "qstpQatarAlignment": { "type": "integer", "minimum": 0 },
+        "researchEcosystemContribution": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

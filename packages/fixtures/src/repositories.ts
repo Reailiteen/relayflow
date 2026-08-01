@@ -2,7 +2,7 @@ import { conflict, err, notFound, ok, validation, type Result } from '@relayflow
 import {
   blocksOthers,
   canTransitionPosition,
-  fitPrioritization,
+  effectiveHours,
   isOpenOffer,
   placementReadinessBlockers,
   stageIndex,
@@ -22,7 +22,10 @@ import {
   type PlacementSignature,
   type PoolEntry,
   type Position,
+  type PositionIntent,
   type PrioritizationRun,
+  type RatingItem,
+  type StartupRating,
   type RecoveryCase,
   type RedistributionRound,
   type RequirementSubmission,
@@ -50,12 +53,15 @@ import type {
   FallbackPort,
   ParticipationPort,
   PlacementPort,
+  PositionIntentPort,
   PrioritizationPort,
+  RatingPort,
   RecoveryPort,
   RequirementPort,
   TaskPort,
 } from '@relayflow/ports';
 import * as seed from './seed';
+import * as seedPrioritisation from './seed-prioritisation';
 
 /**
  * In-memory adapter — the backend for UI development.
@@ -82,6 +88,8 @@ export interface FixtureStore {
   interviews: Interview[];
   documents: CandidateDocument[];
   participations: CycleParticipation[];
+  positionIntents: PositionIntent[];
+  startupRatings: StartupRating[];
   prioritizationRuns: PrioritizationRun[];
   activityEvents: ActivityEvent[];
   taskTemplates: TaskTemplate[];
@@ -105,6 +113,11 @@ export function createStore(): FixtureStore {
     id: 'c1c1e000-0000-4000-8000-000000000002' as Cycle['id'],
     name: 'Autumn 2026 Internship Cycle',
     stage: 'allocation',
+    // Tight on purpose. The three fundable startups want 160 weekly hours
+    // between them, so the draft has to downgrade the lowest-ranked one all the
+    // way to the waitlist and still strand 5 hours — which is what a reviewer
+    // needs to see before they trust the number.
+    fundedWeeklyHours: 135,
     startsOn: '2026-09-01',
     endsOn: '2027-01-31',
     deadlines: {
@@ -133,7 +146,7 @@ export function createStore(): FixtureStore {
     updatedAt: seed.FIXTURE_NOW,
   }));
   participations.push(
-    ...seed.startups.slice(0, 3).map((startup, index) => ({
+    ...seed.startups.map((startup, index) => ({
       id: `b2b2e000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` as CycleParticipation['id'],
       cycleId: secondCycle.id,
       startupId: startup.id,
@@ -141,7 +154,9 @@ export function createStore(): FixtureStore {
       requestedTotalHours: index === 0 ? 60 : 40,
       requestedInternCount: 2,
       disciplines: startup.sector ? [startup.sector] : [],
-      operatorScore: 90 - index * 12,
+      // Derived, not entered. Written from the engine's score when a run is
+      // published; the six ratings behind it are the real record.
+      operatorScore: null,
       internalNotes: null,
       startupJustification: null,
       allocationAcknowledgedAt: null,
@@ -256,7 +271,12 @@ export function createStore(): FixtureStore {
     startupMembers: clone(seed.startupMembers),
     allocations: clone(seed.allocations),
     positions: clone(seed.positions),
-    candidates: clone(seed.candidates),
+    candidates: [
+      ...clone(seed.candidates),
+      // The Autumn cycle needs its own pool, or a cycle you drive yourself from
+      // evaluation runs out of road the moment it reaches shortlisting.
+      ...seedPrioritisation.autumnCandidates(secondCycle.id),
+    ],
     poolEntries: clone(seed.poolEntries),
     selections: clone(seed.selections),
     exceptions: [
@@ -297,6 +317,8 @@ export function createStore(): FixtureStore {
     interviews: clone(seed.interviews),
     documents: clone(seed.documents),
     participations,
+    positionIntents: seedPrioritisation.positionIntents(secondCycle.id, seed.ids.acmeOwner),
+    startupRatings: seedPrioritisation.startupRatings(secondCycle.id, seed.ids.qstpOps),
     prioritizationRuns: [],
     activityEvents: [],
     taskTemplates: [
@@ -677,6 +699,7 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
         id: uuid() as Position['id'],
         cycleId: input.cycleId,
         startupId: input.startupId,
+        intentId: input.intentId ?? null,
         title: input.title,
         description: input.description,
         requiredSkills: input.requiredSkills,
@@ -1462,65 +1485,239 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     },
   };
 
+  const positionIntents: PositionIntentPort = {
+    listForCycle: (cycleId) =>
+      Promise.resolve(ok(store.positionIntents.filter((row) => row.cycleId === cycleId))),
+    listForStartup: (cycleId, startupId) =>
+      Promise.resolve(
+        ok(
+          store.positionIntents.filter(
+            (row) => row.cycleId === cycleId && row.startupId === startupId,
+          ),
+        ),
+      ),
+    save: (input) => {
+      const existing = input.id
+        ? store.positionIntents.find((row) => row.id === input.id)
+        : undefined;
+      const next: PositionIntent = {
+        ...input,
+        id: existing?.id ?? (uuid() as PositionIntent['id']),
+        createdAt: existing?.createdAt ?? input.occurredAt,
+        updatedAt: input.occurredAt,
+      };
+      if (existing) store.positionIntents[store.positionIntents.indexOf(existing)] = next;
+      else store.positionIntents.push(next);
+      appendEvent({
+        cycleId: next.cycleId,
+        entityType: 'position_intent',
+        entityId: next.id,
+        action: existing ? 'updated' : 'submitted',
+        actorId: next.submittedBy,
+        actorRole: 'owner',
+        before: existing ? { title: existing.title } : null,
+        after: { title: next.title, startupId: next.startupId },
+        reason: null,
+        occurredAt: input.occurredAt,
+      });
+      return Promise.resolve(ok(next));
+    },
+    withdraw: (id, occurredAt) => {
+      const existing = store.positionIntents.find((row) => row.id === id);
+      if (!existing) return Promise.resolve(err(notFound('Position intent not found.')));
+      store.positionIntents.splice(store.positionIntents.indexOf(existing), 1);
+      appendEvent({
+        cycleId: existing.cycleId,
+        entityType: 'position_intent',
+        entityId: id,
+        action: 'withdrawn',
+        actorId: existing.submittedBy,
+        actorRole: 'owner',
+        before: { title: existing.title },
+        after: null,
+        reason: null,
+        occurredAt,
+      });
+      return Promise.resolve(ok(undefined));
+    },
+  };
+
+  const ratings: RatingPort = {
+    listForCycle: (cycleId) =>
+      Promise.resolve(
+        ok(store.startupRatings.filter((row) => row.cycleId === cycleId && row.status !== 'superseded')),
+      ),
+    findForStartup: (cycleId, startupId) => {
+      const rows = store.startupRatings.filter(
+        (row) => row.cycleId === cycleId && row.startupId === startupId,
+      );
+      // Submitted wins over draft — the draft is a work-in-progress that must
+      // not shadow the rating a run was actually calculated from.
+      const live =
+        rows.find((row) => row.status === 'submitted') ??
+        rows.find((row) => row.status === 'draft') ??
+        null;
+      return Promise.resolve(ok(live));
+    },
+    saveDraft: (input) => {
+      const existing = store.startupRatings.find(
+        (row) =>
+          row.cycleId === input.cycleId &&
+          row.startupId === input.startupId &&
+          row.status === 'draft',
+      );
+      const next: StartupRating = {
+        id: existing?.id ?? (uuid() as StartupRating['id']),
+        cycleId: input.cycleId,
+        startupId: input.startupId,
+        status: 'draft',
+        items: input.items.map((item) => ({ ...item, id: uuid() as RatingItem['id'] })),
+        ratedBy: input.ratedBy,
+        supersedesId: null,
+        revisionReason: null,
+        submittedAt: null,
+        createdAt: existing?.createdAt ?? input.occurredAt,
+        updatedAt: input.occurredAt,
+      };
+      if (existing) store.startupRatings[store.startupRatings.indexOf(existing)] = next;
+      else store.startupRatings.push(next);
+      return Promise.resolve(ok(next));
+    },
+    submit: (input) => {
+      const prior = store.startupRatings.find(
+        (row) =>
+          row.cycleId === input.cycleId &&
+          row.startupId === input.startupId &&
+          row.status === 'submitted',
+      );
+      // Superseded, never edited. A rating that changed after a run was
+      // published has to stay reconstructable.
+      if (prior) {
+        store.startupRatings[store.startupRatings.indexOf(prior)] = {
+          ...prior,
+          status: 'superseded',
+          updatedAt: input.occurredAt,
+        };
+      }
+      const draft = store.startupRatings.find(
+        (row) =>
+          row.cycleId === input.cycleId &&
+          row.startupId === input.startupId &&
+          row.status === 'draft',
+      );
+      if (draft) store.startupRatings.splice(store.startupRatings.indexOf(draft), 1);
+
+      const next: StartupRating = {
+        id: uuid() as StartupRating['id'],
+        cycleId: input.cycleId,
+        startupId: input.startupId,
+        status: 'submitted',
+        items: input.items.map((item) => ({ ...item, id: uuid() as RatingItem['id'] })),
+        ratedBy: input.ratedBy,
+        supersedesId: prior?.id ?? null,
+        revisionReason: input.revisionReason,
+        submittedAt: input.occurredAt,
+        createdAt: input.occurredAt,
+        updatedAt: input.occurredAt,
+      };
+      store.startupRatings.push(next);
+      appendEvent({
+        cycleId: input.cycleId,
+        entityType: 'startup_rating',
+        entityId: next.id,
+        action: prior ? 'revised' : 'submitted',
+        actorId: input.ratedBy,
+        actorRole: 'operations',
+        before: prior ? { ratingId: prior.id } : null,
+        after: { startupId: input.startupId },
+        reason: input.revisionReason,
+        occurredAt: input.occurredAt,
+      });
+      return Promise.resolve(ok(next));
+    },
+  };
+
   const prioritization: PrioritizationPort = {
-    run: (cycleId, createdBy, createdAt) => {
-      const cycle = store.cycles.find((row) => row.id === cycleId);
-      if (!cycle) return Promise.resolve(err(notFound('Cycle not found.')));
-      const previous = store.prioritizationRuns.filter((row) => row.cycleId === cycleId);
-      const proposals = fitPrioritization(
-        store.participations.filter((row) => row.cycleId === cycleId),
-        cycle.fundedWeeklyHours,
+    // No scoring here. The use-case has already called the engine; this stores
+    // what came back and nothing more.
+    create: (input) => {
+      const previous = store.prioritizationRuns.filter((row) => row.cycleId === input.cycleId);
+      // One draft at a time — re-running replaces the last one rather than
+      // leaving two candidate answers with no way to tell which is current.
+      store.prioritizationRuns = store.prioritizationRuns.map((row) =>
+        row.cycleId === input.cycleId && row.status === 'draft'
+          ? { ...row, status: 'superseded' }
+          : row,
       );
       const run: PrioritizationRun = {
+        ...input,
         id: uuid() as PrioritizationRun['id'],
-        cycleId,
-        version: previous.length + 1,
+        version: Math.max(...previous.map((row) => row.version), 0) + 1,
         status: 'draft',
-        budgetHours: cycle.fundedWeeklyHours,
-        proposedHours: proposals.reduce((sum, row) => sum + row.proposedHours, 0),
-        proposals,
-        createdBy,
-        createdAt,
         confirmedAt: null,
       };
       store.prioritizationRuns.push(run);
       appendEvent({
-        cycleId,
+        cycleId: input.cycleId,
         entityType: 'prioritization_run',
         entityId: run.id,
         action: 'created',
-        actorId: createdBy,
+        actorId: input.createdBy,
         actorRole: 'operations',
         before: null,
-        after: { version: run.version, proposedHours: run.proposedHours },
+        after: {
+          version: run.version,
+          proposedHours: run.proposedHours,
+          completeness: run.completeness,
+        },
         reason: null,
-        occurredAt: createdAt,
+        occurredAt: input.createdAt,
       });
       return Promise.resolve(ok(run));
     },
     listForCycle: (cycleId) =>
       Promise.resolve(ok(store.prioritizationRuns.filter((row) => row.cycleId === cycleId))),
-    adjust: (runId, startupId, proposedHours, adjustedBy, adjustedAt) => {
+    adjust: (runId, startupId, proposedHours, reason, adjustedBy, adjustedAt) => {
       const source = store.prioritizationRuns.find((row) => row.id === runId);
       if (!source || source.status !== 'draft') {
         return Promise.resolve(err(notFound('Draft prioritization run not found.')));
       }
-      const proposal = source.proposals.find((row) => row.startupId === startupId);
-      if (!proposal) return Promise.resolve(err(notFound('Proposal not found.')));
-      const proposals = source.proposals.map((row) =>
-        row.startupId === startupId ? { ...row, proposedHours } : row,
+      const target = source.outcomes.find((row) => row.startupId === startupId);
+      if (!target) return Promise.resolve(err(notFound('That startup is not in this run.')));
+      // Handing hours to a blocked startup would paper over the thing that
+      // actually needs doing — chasing the missing information.
+      if (target.status !== 'scored') {
+        return Promise.resolve(
+          err(
+            conflict(
+              `That startup is ${target.status.replace(/_/g, ' ')}, so it has no tier to adjust.`,
+            ),
+          ),
+        );
+      }
+
+      const outcomes = source.outcomes.map((row) =>
+        row.startupId === startupId
+          ? { ...row, adjustedHours: proposedHours, adjustmentReason: reason }
+          : row,
       );
-      const proposedTotal = proposals.reduce((sum, row) => sum + row.proposedHours, 0);
+      const proposedTotal = outcomes.reduce(
+        (sum, row) => sum + (effectiveHours(row) ?? 0),
+        0,
+      );
       if (proposedTotal > source.budgetHours) {
         return Promise.resolve(err(conflict('Adjusted proposals exceed the cycle budget.')));
       }
+
       const previous = store.prioritizationRuns.filter((row) => row.cycleId === source.cycleId);
       const adjusted: PrioritizationRun = {
         ...source,
         id: uuid() as PrioritizationRun['id'],
         version: Math.max(...previous.map((row) => row.version), 0) + 1,
-        proposals,
+        outcomes,
         proposedHours: proposedTotal,
+        residualHours: source.budgetHours - proposedTotal,
+        withinBudget: proposedTotal <= source.budgetHours,
         createdBy: adjustedBy,
         createdAt: adjustedAt,
       };
@@ -2302,6 +2499,8 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     interviews,
     documents,
     participation,
+    positionIntents,
+    ratings,
     prioritization,
     activity,
     tasks,

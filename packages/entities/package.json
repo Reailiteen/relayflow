@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@relayflow/core": "workspace:*",
+    "@relayflow/prioritisation": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

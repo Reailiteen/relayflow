@@ -3,10 +3,12 @@ import { defineEntity, auditColumns } from '../shared/entity';
 import {
   cycleId,
   positionId,
+  positionIntentId,
   startupId,
   userId,
   type CycleId,
   type PositionId,
+  type PositionIntentId,
   type StartupId,
   type UserId,
   type RedistributionRoundId,
@@ -54,6 +56,12 @@ export interface Position {
   readonly id: PositionId;
   readonly cycleId: CycleId;
   readonly startupId: StartupId;
+  /**
+   * The readiness answer this posting grew out of, if there was one. Provenance
+   * only — it links a funded role back to the intent that helped justify the
+   * allocation paying for it.
+   */
+  readonly intentId: PositionIntentId | null;
   readonly title: string;
   readonly description: string;
   readonly requiredSkills: readonly string[];
@@ -82,6 +90,7 @@ export const positionRow = z.object({
   id: positionId,
   cycle_id: cycleId,
   startup_id: startupId,
+  intent_id: positionIntentId.nullable().default(null),
   title: z.string().min(1).max(200),
   description: z.string().max(5000),
   required_skills: z.array(z.string().max(60)),
@@ -114,6 +123,7 @@ export const positionEntity = defineEntity({
     id: row.id,
     cycleId: row.cycle_id,
     startupId: row.startup_id,
+    intentId: row.intent_id,
     title: row.title,
     description: row.description,
     requiredSkills: row.required_skills,

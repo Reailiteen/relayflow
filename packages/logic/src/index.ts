@@ -6,6 +6,8 @@ export * from './qstp/views';
 export * from './qstp/decisions';
 export * from './qstp/operations';
 export * from './allocation/decide-allocation';
+export * from './prioritisation/submit-position-intent';
+export * from './prioritisation/rate-startup';
 export * from './positions/submit-position';
 export * from './selection/select-candidate';
 export * from './selection/accept-offer';

@@ -20,6 +20,8 @@ import { FIXTURE_SCENARIO_NAMES } from '@/server/context';
 import { resetFixtureScenarioAction } from '@/server/actions';
 import { AllocationActions } from './workspace-actions';
 import { GateReviewPanel, ParticipationPanel } from './operational-panels';
+import { RatingPanel } from './rating-panel';
+import { PositionIntentPanel } from './position-intent-panel';
 import {
   AllocationReviewPanel,
   CandidateAvailabilityPanel,
@@ -332,6 +334,13 @@ export function CycleWorkspaceView({
                       mode={portal}
                       acknowledged={mineAcknowledged}
                       draftRunId={draftRun?.id}
+                      unevaluatedCount={
+                        draftRun?.outcomes.filter(
+                          (row) =>
+                            row.status === 'needs_information' ||
+                            row.status === 'awaiting_manual_scores',
+                        ).length ?? 0
+                      }
                     />
                   </div>
                 )
@@ -349,6 +358,8 @@ export function CycleWorkspaceView({
                       <th>Score</th>
                       <th>Tier</th>
                       <th>Acknowledged</th>
+                      {portal === 'qstp' ? <th>Rating</th> : null}
+                      {portal === 'startup' ? <th>Readiness</th> : null}
                       {data.permissions.manageParticipation ? (
                         <th>
                           <span className="sr-only">Actions</span>
@@ -375,6 +386,38 @@ export function CycleWorkspaceView({
                               {row.allocationAcknowledgedAt ? 'Yes' : 'Pending'}
                             </Badge>
                           </td>
+                          {/*
+                            The two inputs the engine actually runs on. Rating is
+                            QSTP's judgement; readiness is the startup's own
+                            answer. Neither existed before the real engine landed.
+                          */}
+                          {portal === 'qstp' && startup ? (
+                            <td>
+                              <RatingPanel
+                                cycleId={data.cycle.id}
+                                startup={startup}
+                                rating={data.ratings.find(
+                                  (item) => item.startupId === row.startupId,
+                                )}
+                                canRate={data.permissions.rateStartups}
+                              />
+                            </td>
+                          ) : null}
+                          {portal === 'startup' ? (
+                            <td>
+                              <PositionIntentPanel
+                                cycleId={data.cycle.id}
+                                startupId={row.startupId}
+                                intent={data.positionIntents.find(
+                                  (item) => item.startupId === row.startupId,
+                                )}
+                                canSubmit={
+                                  data.permissions.submitPositions &&
+                                  data.cycle.stage === 'allocation'
+                                }
+                              />
+                            </td>
+                          ) : null}
                           {data.permissions.manageParticipation ? (
                             <td className="pr-4 text-right">
                               <ParticipationPanel
@@ -405,7 +448,11 @@ export function CycleWorkspaceView({
                     .map((run) => (
                       <div key={run.id} className="flex items-center gap-4 border-t border-hairline px-5 py-3 text-xs">
                         <span className="font-semibold text-ink">Prioritization v{run.version}</span>
-                        <span className="flex-1 text-ink-3">{run.proposedHours} / {run.budgetHours} weekly hours</span>
+                        <span className="flex-1 text-ink-3">
+                          {run.proposedHours} / {run.budgetHours} weekly hours
+                          {run.residualHours > 0 ? ` · ${run.residualHours}h unspent` : ''}
+                          {run.completeness === 'partial_draft' ? ' · incomplete' : ''}
+                        </span>
                         <Badge tone={run.status === 'confirmed' ? 'positive' : run.status === 'draft' ? 'warning' : 'neutral'}>{run.status}</Badge>
                       </div>
                     ))

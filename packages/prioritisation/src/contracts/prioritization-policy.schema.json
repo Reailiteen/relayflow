@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qstp.example/contracts/prioritization-policy.schema.json",
+  "title": "QSTP startup prioritization policy snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "ratingMaximum",
+    "neutralHistoryPoints",
+    "minimumWeeklySupervisionMinutes",
+    "minimumRoleValueRating",
+    "buckets",
+    "thresholds",
+    "nearTieMargin",
+    "nearThresholdMargin"
+  ],
+  "properties": {
+    "version": { "type": "string", "minLength": 1 },
+    "ratingMaximum": { "type": "integer", "minimum": 1 },
+    "neutralHistoryPoints": { "type": "number", "minimum": 0, "maximum": 10 },
+    "minimumWeeklySupervisionMinutes": { "type": "number", "minimum": 0 },
+    "minimumRoleValueRating": { "type": "integer", "minimum": 0 },
+    "buckets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "number", "minimum": 0 }
+    },
+    "thresholds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["minScore", "hours"],
+        "properties": {
+          "minScore": { "type": "number", "minimum": 0, "maximum": 100 },
+          "hours": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "nearTieMargin": { "type": "number", "minimum": 0 },
+    "nearThresholdMargin": { "type": "number", "minimum": 0 }
+  }
+}

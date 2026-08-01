@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { conflict, err, forbidden, notFound, ok, validation } from '@relayflow/core';
+import { attempt, conflict, err, forbidden, notFound, ok, validation } from '@relayflow/core';
 import { ANY_STARTUP, authorize, isCandidate, isQstp, isStartup } from '@relayflow/access';
+import { DEFAULT_POLICY, buildPortfolioDraft } from '@relayflow/prioritisation';
+import { effectiveHours } from '@relayflow/entities';
+import { buildEngineInput } from '../prioritisation/build-engine-input';
+import { mapDraftToRun } from '../prioritisation/map-draft-to-run';
 import {
   CYCLE_STAGES,
   HOUR_TIERS,
@@ -44,6 +48,7 @@ import {
   type JsonValue,
   type Interview,
   type Placement,
+  type PositionIntent,
   type PlacementRequirement,
   type PlacementSignature,
   type PoolEntry,
@@ -54,6 +59,7 @@ import {
   type RedistributionRound,
   type StartupId,
   type Startup,
+  type StartupRating,
   type Selection,
   type SelectionConflict,
   type StageGateCheck,
@@ -240,6 +246,9 @@ export interface CycleWorkspace {
   readonly allocations: readonly Allocation[];
   readonly allocationHistory: readonly Allocation[];
   readonly prioritizationRuns: readonly PrioritizationRun[];
+  /** QSTP-only. Comparative internal judgement, redacted for other portals. */
+  readonly ratings: readonly StartupRating[];
+  readonly positionIntents: readonly PositionIntent[];
   readonly startups: readonly Startup[];
   readonly candidates: readonly Candidate[];
   readonly poolEntries: readonly { readonly entry: PoolEntry; readonly candidate: Candidate }[];
@@ -269,6 +278,7 @@ export interface CycleWorkspace {
     readonly manageParticipation: boolean;
     readonly manageAllocation: boolean;
     readonly acknowledgeAllocation: boolean;
+    readonly rateStartups: boolean;
     readonly submitPositions: boolean;
     readonly reviewPositions: boolean;
     readonly assessTasks: boolean;
@@ -402,6 +412,8 @@ export const getCycleWorkspace = defineUseCase({
       activity,
       fallbacks,
       tasks,
+      ratings,
+      positionIntents,
     ] = await Promise.all([
       ctx.repos.cycles.list(),
       ctx.repos.participation.listForCycle(cycle.id),
@@ -422,6 +434,8 @@ export const getCycleWorkspace = defineUseCase({
       ctx.repos.activity.listForCycle(cycle.id),
       ctx.repos.fallbacks.listForCycle(cycle.id),
       ctx.repos.tasks.listForCycle(cycle.id),
+      ctx.repos.ratings.listForCycle(cycle.id),
+      ctx.repos.positionIntents.listForCycle(cycle.id),
     ]);
     if (!cycles.ok) return err(cycles.error);
     if (!participation.ok) return err(participation.error);
@@ -442,6 +456,8 @@ export const getCycleWorkspace = defineUseCase({
     if (!activity.ok) return err(activity.error);
     if (!fallbacks.ok) return err(fallbacks.error);
     if (!tasks.ok) return err(tasks.error);
+    if (!ratings.ok) return err(ratings.error);
+    if (!positionIntents.ok) return err(positionIntents.error);
 
     let allowedStartupIds: Set<StartupId> | null = null;
     let candidateId: CandidateId | null = null;
@@ -598,6 +614,16 @@ export const getCycleWorkspace = defineUseCase({
         ? allocationHistory.data
         : allocationHistory.data.filter((row) => allowedStartupIds?.has(row.startupId)),
       prioritizationRuns: isQstp(actor.data) ? prioritizationRuns.data : [],
+      // Ratings are comparative and internal. A startup learning its own rating
+      // learns its standing against its peers, which is not QSTP's to disclose
+      // as a side effect of loading a page.
+      ratings: isQstp(actor.data) ? ratings.data : [],
+      // Intents are the startup's own answers, so it may see them back.
+      positionIntents: isQstp(actor.data)
+        ? positionIntents.data
+        : allowedStartupIds
+          ? positionIntents.data.filter((row) => allowedStartupIds?.has(row.startupId))
+          : [],
       startups: isQstp(actor.data)
         ? startups.data
         : startups.data.filter(
@@ -676,6 +702,7 @@ export const getCycleWorkspace = defineUseCase({
         manageCycle: authorize(actor.data, { capability: 'cycle:advance_stage' }).ok,
         manageParticipation: authorize(actor.data, { capability: 'startup:manage' }).ok,
         manageAllocation: authorize(actor.data, { capability: 'allocation:decide' }).ok,
+        rateStartups: authorize(actor.data, { capability: 'rating:submit' }).ok,
         acknowledgeAllocation:
           allowedStartupIds !== null &&
           [...allowedStartupIds].some(
@@ -846,10 +873,42 @@ export const runPrioritization = defineUseCase({
     if (!cycle.ok) return cycle;
     if (cycle.data.stage !== 'allocation')
       return err(validation('Prioritization only runs during allocation.'));
-    return ctx.repos.prioritization.run(
-      input.cycleId,
-      actor.data.userId,
-      ctx.clock.now().toISOString(),
+
+    const [startups, participations, intents, ratings] = await Promise.all([
+      ctx.repos.startups.listForCycle(input.cycleId),
+      ctx.repos.participation.listForCycle(input.cycleId),
+      ctx.repos.positionIntents.listForCycle(input.cycleId),
+      ctx.repos.ratings.listForCycle(input.cycleId),
+    ]);
+    if (!startups.ok) return startups;
+    if (!participations.ok) return participations;
+    if (!intents.ok) return intents;
+    if (!ratings.ok) return ratings;
+
+    // The single throw/Result boundary. The engine throws on a broken invariant
+    // — an exact tie handed unequal hours, say — and those must not be quietly
+    // converted into a Result and published.
+    const draft = await attempt(() =>
+      buildPortfolioDraft(
+        buildEngineInput({
+          cycle: cycle.data,
+          startups: startups.data,
+          participations: participations.data,
+          intents: intents.data,
+          ratings: ratings.data,
+        }),
+      ),
+    );
+    if (!draft.ok) return draft;
+
+    return ctx.repos.prioritization.create(
+      mapDraftToRun(
+        draft.data,
+        participations.data,
+        DEFAULT_POLICY,
+        actor.data.userId,
+        ctx.clock.now().toISOString(),
+      ),
     );
   },
 });
@@ -868,6 +927,8 @@ export const adjustPrioritization = defineUseCase({
       z.literal(60),
     ]),
     reason: z.string().trim().min(10).max(2000),
+    /** Explicit acknowledgement that this splits an exact-score tie. */
+    breakTie: z.boolean().default(false),
   }),
   authorize: { capability: 'allocation:decide' as const },
   execute: async (ctx, input) => {
@@ -882,13 +943,38 @@ export const adjustPrioritization = defineUseCase({
     if (!runs.ok) return runs;
     const source = runs.data.find((row) => row.id === input.runId && row.status === 'draft');
     if (!source) return err(notFound('Draft prioritization run not found.'));
-    const before = source.proposals.find((row) => row.startupId === input.startupId);
-    if (!before) return err(notFound('Proposal not found.'));
+    const before = source.outcomes.find((row) => row.startupId === input.startupId);
+    if (!before) return err(notFound('That startup is not in this run.'));
+    if (before.status !== 'scored') {
+      return err(
+        conflict(
+          `${before.status.replace(/_/g, ' ')} is not a tier. Resolve what is blocking this startup and re-run.`,
+        ),
+      );
+    }
+
+    // An exact-score tie must receive identical hours — the engine asserts it
+    // and throws on the next run if it does not hold. Moving one member of a
+    // tied pair is therefore a decision to break the tie, and it needs to be
+    // taken deliberately rather than discovered as an opaque failure later.
+    const tied = source.outcomes.filter(
+      (row) => row.status === 'scored' && row.score === before.score && row.startupId !== before.startupId,
+    );
+    if (tied.length > 0 && !input.breakTie) {
+      return err(
+        conflict(
+          `This startup is tied on ${before.score} with ${tied.length} other${tied.length > 1 ? 's' : ''}. ` +
+            'Adjusting only one of them breaks the equal-treatment rule — confirm that is what you mean.',
+        ),
+      );
+    }
+
     const occurredAt = ctx.clock.now().toISOString();
     const adjusted = await ctx.repos.prioritization.adjust(
       source.id,
       input.startupId,
       input.proposedHours,
+      input.reason,
       actor.data.userId,
       occurredAt,
     );
@@ -899,7 +985,12 @@ export const adjustPrioritization = defineUseCase({
       entityId: adjusted.data.id,
       action: 'proposal_adjusted',
       before: { runId: source.id, startupId: input.startupId, hours: before.proposedHours },
-      after: { runId: adjusted.data.id, startupId: input.startupId, hours: input.proposedHours },
+      after: {
+        runId: adjusted.data.id,
+        startupId: input.startupId,
+        hours: input.proposedHours,
+        brokeTie: tied.length > 0,
+      },
       reason: input.reason,
       occurredAt,
     });
@@ -909,7 +1000,16 @@ export const adjustPrioritization = defineUseCase({
 
 export const publishAllocations = defineUseCase({
   name: 'allocation.publish',
-  input: z.object({ cycleId, runId: prioritizationRunId }),
+  input: z.object({
+    cycleId,
+    runId: prioritizationRunId,
+    /**
+     * Required when the draft is incomplete. Publishing a partial draft drops
+     * every startup that never reached an outcome, so it cannot be the default.
+     */
+    acknowledgeIncomplete: z.boolean().default(false),
+    incompleteReason: z.string().trim().min(10).max(2000).nullable().default(null),
+  }),
   authorize: { capability: 'allocation:decide' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
@@ -920,34 +1020,106 @@ export const publishAllocations = defineUseCase({
     if (!runs.ok) return runs;
     const run = runs.data.find((row) => row.id === input.runId);
     if (!run || run.status !== 'draft') return err(notFound('Draft prioritization run not found.'));
-    if (run.proposedHours > cycle.data.fundedWeeklyHours)
-      return err(validation('Proposals exceed the cycle budget.'));
+
+    // The engine's own verdict, not a re-sum of the outcomes. A strategy can
+    // return a total that happens to fit while still reporting that it could
+    // not honour the requested distribution.
+    if (!run.withinBudget) return err(validation('Proposals exceed the cycle budget.'));
+
+    const blocked = run.outcomes.filter((row) => row.status !== 'scored');
+    if (run.completeness === 'partial_draft') {
+      const unevaluated = blocked.filter(
+        (row) => row.status === 'needs_information' || row.status === 'awaiting_manual_scores',
+      );
+      if (!input.acknowledgeIncomplete || !input.incompleteReason) {
+        return err(
+          validation(
+            `${unevaluated.length} startup${unevaluated.length === 1 ? '' : 's'} ` +
+              'never reached an outcome. Publishing now leaves them with nothing — ' +
+              'confirm that is intended and say why.',
+          ),
+        );
+      }
+    }
+
     const occurredAt = ctx.clock.now().toISOString();
-    for (const proposal of run.proposals) {
-      const participation = await ctx.repos.participation.find(input.cycleId, proposal.startupId);
+
+    // Only `scored` startups become allocations.
+    //
+    // The other four statuses get NO allocation row at all. A 0h allocation is
+    // indistinguishable from "we evaluated you and you did not qualify", and
+    // these startups were never evaluated — one needs chasing for documents,
+    // another needs a rating, another needs to fix its supervision plan. They
+    // stay visible on the run, which is where that work is tracked.
+    for (const outcome of run.outcomes) {
+      if (outcome.status !== 'scored') continue;
+      const hours = effectiveHours(outcome);
+      if (hours === null) continue;
+      const participation = await ctx.repos.participation.find(input.cycleId, outcome.startupId);
       if (!participation.ok) return participation;
       const decided = await ctx.repos.allocations.decide({
         cycleId: input.cycleId,
-        startupId: proposal.startupId,
-        weeklyHours: proposal.proposedHours,
-        score: proposal.score,
+        startupId: outcome.startupId,
+        weeklyHours: hours,
+        score: outcome.score,
         justification: participation.data?.startupJustification ?? null,
-        overrideReason: null,
+        overrideReason: outcome.adjustmentReason,
         decidedBy: actor.data.userId,
         decidedAt: occurredAt,
         redistributionRoundId: null,
       });
       if (!decided.ok) return decided;
+
+      // `operatorScore` is now derived, not entered. Writing it here keeps the
+      // existing dashboards working while the six ratings behind it stay the
+      // real record.
+      if (participation.data && outcome.score !== null) {
+        const saved = await ctx.repos.participation.save({
+          ...participation.data,
+          operatorScore: outcome.score,
+          occurredAt,
+        });
+        if (!saved.ok) return saved;
+      }
     }
+
     const confirmed = await ctx.repos.prioritization.confirm(run.id, occurredAt);
     if (!confirmed.ok) return confirmed;
+
+    // Each blocked startup is recorded by name and reason, so "who still needs
+    // something from us?" is answerable from the audit log alone.
+    for (const outcome of blocked) {
+      await event(ctx, {
+        cycleId: input.cycleId,
+        entityType: 'prioritization_run',
+        entityId: run.id,
+        action: 'startup_not_allocated',
+        before: null,
+        after: {
+          startupId: outcome.startupId,
+          status: outcome.status,
+          blockers: outcome.blockers,
+        },
+        reason: input.incompleteReason,
+        occurredAt,
+      });
+    }
+
     await event(ctx, {
       cycleId: input.cycleId,
       entityType: 'cycle',
       entityId: input.cycleId,
       action: 'allocations_published',
       before: null,
-      after: { runId: run.id, version: run.version, hours: run.proposedHours },
+      after: {
+        runId: run.id,
+        version: run.version,
+        hours: run.proposedHours,
+        allocated: run.outcomes.filter((row) => row.status === 'scored').length,
+        notAllocated: blocked.length,
+        residualHours: run.residualHours,
+      },
+      reason: input.incompleteReason,
       occurredAt,
     });
     return ok(confirmed.data);
@@ -1994,7 +2166,7 @@ export const signPlacementAgreement = defineUseCase({
   input: z.object({
     cycleId,
     placementId,
-    kind: z.enum(['qstp_agreement', 'startup_agreement']),
+    kind: z.enum(['qstp_agreement', 'startup_agreement', 'candidate_agreement']),
     signerName: z.string().trim().min(1).max(200),
     declarationAccepted: z.literal(true),
     documentOpenedAt: z.iso.datetime({ offset: true }),
@@ -2010,13 +2182,20 @@ export const signPlacementAgreement = defineUseCase({
     if (placement.data.status === 'cancelled') {
       return err(conflict('Cancelled placements are read-only.'));
     }
+    // Each party may sign only their own line, and only on a placement they are
+    // actually party to. A candidate signing `startup_agreement` is not an
+    // authorization error to be explained — it is a request about a placement
+    // they cannot see in that capacity, so it reads as not-found like the rest.
     const allowed =
       (input.kind === 'qstp_agreement' && isQstp(actor.data) && actor.data.role !== 'viewer') ||
       (input.kind === 'startup_agreement' &&
         isStartup(actor.data) &&
         actor.data.affiliations.some(
           (row) => row.startupId === placement.data?.startupId && row.status === 'active',
-        ));
+        )) ||
+      (input.kind === 'candidate_agreement' &&
+        isCandidate(actor.data) &&
+        actor.data.candidateId === placement.data.candidateId);
     if (!allowed) return err(notFound('Placement not found.'));
     const now = ctx.clock.now().toISOString();
     const signed = await ctx.repos.requirements.sign({

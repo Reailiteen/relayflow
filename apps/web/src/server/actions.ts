@@ -36,6 +36,9 @@ import {
   amendPlacementRequirement,
   adjustPrioritization,
   archiveCycle,
+  draftStartupRating,
+  submitStartupRating,
+  submitPositionIntent,
   advanceCycleStage,
   cancelPlacement,
   closeRedistributionRound,
@@ -72,7 +75,7 @@ import {
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
 import { DEV_ACTOR_COOKIE, FIXTURE_SCENARIO_NAMES, resetDevelopmentFixtures } from './context';
-import { accountForEmail, accountForPersona } from './auth';
+import { accountForPersona, signIn, signOut } from './auth';
 
 /**
  * Every mutation the demo can perform.
@@ -228,6 +231,18 @@ export async function publishAllocationsAction(input: unknown) {
   return revalidate(await action(publishAllocations)(input));
 }
 
+export async function draftStartupRatingAction(input: unknown) {
+  return revalidate(await action(draftStartupRating)(input));
+}
+
+export async function submitStartupRatingAction(input: unknown) {
+  return revalidate(await action(submitStartupRating)(input));
+}
+
+export async function submitPositionIntentAction(input: unknown) {
+  return revalidate(await action(submitPositionIntent)(input));
+}
+
 export async function advanceCycleStageAction(input: unknown) {
   return revalidate(await action(advanceCycleStage)(input));
 }
@@ -380,26 +395,28 @@ export async function signInAction(
   _previous: { error: string | null } | null,
   formData: FormData,
 ): Promise<{ error: string | null }> {
-  const raw = formData.get('email');
-  const email = typeof raw === 'string' ? raw : '';
+  const rawEmail = formData.get('email');
+  const rawPassword = formData.get('password');
+  const email = typeof rawEmail === 'string' ? rawEmail : '';
+  const password = typeof rawPassword === 'string' ? rawPassword : '';
 
   if (!email.trim()) return { error: 'Enter your email address.' };
 
-  const account = accountForEmail(email);
-  if (!account) {
-    return {
-      error: 'No account with that email. Use one of the demo accounts listed below.',
-    };
+  const outcome = await signIn(email, password);
+  if (!outcome.ok || !outcome.account) {
+    return { error: outcome.error ?? 'Could not sign you in.' };
   }
 
+  // Recorded even with a live Supabase session: the repositories are still
+  // fixtures, so this is what tells them which seeded person you are. It goes
+  // away with the data cutover.
   const store = await cookies();
-  store.set(DEV_ACTOR_COOKIE, account.persona, { path: '/', maxAge: 60 * 60 * 24 });
+  store.set(DEV_ACTOR_COOKIE, outcome.account.persona, { path: '/', maxAge: 60 * 60 * 24 });
 
   revalidatePath('/', 'layout');
-  redirect(account.destination);
+  redirect(outcome.account.destination);
 }
 
-/** One-click sign-in from the demo account list. */
 export async function signInAsAction(formData: FormData) {
   const raw = formData.get('persona');
   const persona = typeof raw === 'string' && raw.length > 0 ? raw : 'manager';
@@ -420,6 +437,7 @@ export async function signInAsAction(formData: FormData) {
  * now is that the call site never changes when that happens.
  */
 export async function signOutAction() {
+  await signOut();
   const store = await cookies();
   store.delete(DEV_ACTOR_COOKIE);
   revalidatePath('/', 'layout');
