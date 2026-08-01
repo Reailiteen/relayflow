@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@supabase/ssr':
+      specifier: ^0.8.0
+      version: 0.8.0
     '@supabase/supabase-js':
       specifier: ^2.58.0
       version: 2.111.0
@@ -123,6 +126,9 @@ importers:
       '@relayflow/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@relayflow/data':
+        specifier: workspace:*
+        version: link:../../packages/data
       '@relayflow/entities':
         specifier: workspace:*
         version: link:../../packages/entities
@@ -144,6 +150,9 @@ importers:
       '@relayflow/ui-web':
         specifier: workspace:*
         version: link:../../packages/ui-web
+      '@supabase/ssr':
+        specifier: 'catalog:'
+        version: 0.8.0(@supabase/supabase-js@2.111.0)
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(@playwright/test@1.62.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -6933,7 +6942,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.2': {}
 
