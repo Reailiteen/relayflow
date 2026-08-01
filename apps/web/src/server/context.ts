@@ -2,7 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { systemClock } from '@relayflow/core';
-import type { MaybeActor } from '@relayflow/access';
+import { ANONYMOUS, type MaybeActor } from '@relayflow/access';
 import { createFixtureRepositories, createStore, devActor } from '@relayflow/fixtures';
 import { createLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '@relayflow/logic';
@@ -33,7 +33,14 @@ export const DEV_ACTOR_COOKIE = 'relayflow_dev_actor';
 export const getActor = cache(async (): Promise<MaybeActor> => {
   // ⟵ REPLACE WITH: verified session lookup (supabase.auth.getUser()).
   const store = await cookies();
-  return devActor(store.get(DEV_ACTOR_COOKIE)?.value);
+  const persona = store.get(DEV_ACTOR_COOKIE)?.value;
+
+  // No cookie means signed out. Defaulting to a persona here would make the
+  // sign-out button do nothing, and would be exactly the kind of "helpful"
+  // fallback that hides a broken session check once this is real.
+  if (!persona) return ANONYMOUS;
+
+  return devActor(persona);
 });
 
 /**

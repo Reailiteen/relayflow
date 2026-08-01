@@ -4,6 +4,7 @@ import { getStartupHome } from '@relayflow/logic';
 import { getActor, getContext } from '@/server/context';
 import { StartupHeading, StartupSidebar } from './_components/nav';
 import { PortalSwitcher } from './_components/portal-switcher';
+import { UserMenu } from '../../_components/user-menu';
 
 /**
  * The startup shell.
@@ -29,7 +30,7 @@ export default async function StartupLayout({ children }: { children: React.Reac
           <StartupHeading />
           <div className="ml-auto flex items-center gap-2">
             <PortalSwitcher />
-            <span className="hidden text-xs text-text-muted sm:inline">{actor.fullName}</span>
+            <UserMenu name={actor.fullName} role={startupName} />
           </div>
         </header>
 

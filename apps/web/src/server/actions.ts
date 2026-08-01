@@ -9,9 +9,14 @@ import {
   decideAllocation,
   decideException,
   grantHours,
+  importCandidates,
+  moveCandidateCard,
+  moveStartupCard,
   reclaimHours,
   requestException,
   resolveConflict,
+  reviewPosition,
+  sharePool,
   selectCandidate,
   submitPosition,
   uploadDocument,
@@ -19,6 +24,7 @@ import {
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
 import { DEV_ACTOR_COOKIE } from './context';
+import { accountForEmail, accountForPersona } from './auth';
 
 /**
  * Every mutation the demo can perform.
@@ -70,6 +76,26 @@ export async function requestExceptionAction(input: unknown) {
   return revalidate(await action(requestException)(input));
 }
 
+export async function reviewPositionAction(input: unknown) {
+  return revalidate(await action(reviewPosition)(input));
+}
+
+export async function importCandidatesAction(input: unknown) {
+  return revalidate(await action(importCandidates)(input));
+}
+
+export async function sharePoolAction(input: unknown) {
+  return revalidate(await action(sharePool)(input));
+}
+
+export async function moveStartupCardAction(input: unknown) {
+  return revalidate(await action(moveStartupCard)(input));
+}
+
+export async function moveCandidateCardAction(input: unknown) {
+  return revalidate(await action(moveCandidateCard)(input));
+}
+
 export async function confirmAvailabilityAction(input: unknown) {
   return revalidate(await action(confirmAvailability)(input));
 }
@@ -87,34 +113,62 @@ export async function verifyDocumentAction(input: unknown) {
 }
 
 /**
- * Fake sign-in.
+ * Sign in — without authenticating anything.
  *
- * There is no authentication yet — this only records which seeded persona the
- * session is acting as, then sends them to their portal. It is a demo
- * affordance, and it is deliberately the only thing standing in for auth so
- * that replacing it later is a single, obvious change.
+ * The password is accepted and discarded. What actually happens is that the
+ * email is matched to a seeded persona and recorded in a cookie. The form is
+ * real, the credential check is not, and the UI says so rather than implying a
+ * security boundary that does not exist.
+ *
+ * Returns an error instead of redirecting when the email is unknown, so the
+ * form can say which addresses work.
  */
+export async function signInAction(
+  _previous: { error: string | null } | null,
+  formData: FormData,
+): Promise<{ error: string | null }> {
+  const raw = formData.get('email');
+  const email = typeof raw === 'string' ? raw : '';
+
+  if (!email.trim()) return { error: 'Enter your email address.' };
+
+  const account = accountForEmail(email);
+  if (!account) {
+    return {
+      error: 'No account with that email. Use one of the demo accounts listed below.',
+    };
+  }
+
+  const store = await cookies();
+  store.set(DEV_ACTOR_COOKIE, account.persona, { path: '/', maxAge: 60 * 60 * 24 });
+
+  revalidatePath('/', 'layout');
+  redirect(account.destination);
+}
+
+/** One-click sign-in from the demo account list. */
 export async function signInAsAction(formData: FormData) {
-  // FormData entries can be Files, which stringify to "[object Object]".
   const raw = formData.get('persona');
   const persona = typeof raw === 'string' && raw.length > 0 ? raw : 'manager';
+  const account = accountForPersona(persona);
+
   const store = await cookies();
   store.set(DEV_ACTOR_COOKIE, persona, { path: '/', maxAge: 60 * 60 * 24 });
 
-  const destination =
-    persona === 'startupOwner' || persona === 'supervisor' || persona === 'lateStartup'
-      ? '/startup'
-      : persona === 'candidate'
-        ? '/candidate'
-        : '/';
-
   revalidatePath('/', 'layout');
-  redirect(destination);
+  redirect(account?.destination ?? '/');
 }
 
+/**
+ * Sign out.
+ *
+ * Clears the cookie and returns to the sign-in screen. With a real session this
+ * would also revoke it server-side — the point of routing it through an action
+ * now is that the call site never changes when that happens.
+ */
 export async function signOutAction() {
   const store = await cookies();
-  store.set(DEV_ACTOR_COOKIE, 'anonymous', { path: '/', maxAge: 60 * 60 * 24 });
+  store.delete(DEV_ACTOR_COOKIE);
   revalidatePath('/', 'layout');
   redirect('/signin');
 }

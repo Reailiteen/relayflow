@@ -3,6 +3,7 @@ import { err, notFound, ok } from '@relayflow/core';
 import { ANY_STARTUP, authorize, isStartup } from '@relayflow/access';
 import {
   effectiveDeadline,
+  isProtected,
   isSelectable,
   remainingStartupHours,
   reservesHours,
@@ -308,6 +309,13 @@ export interface PositionPool {
 export interface StartupPools {
   readonly pools: readonly PositionPool[];
   readonly selectionDeadline: string;
+  /**
+   * Both are here rather than left to the screen because "has the deadline
+   * passed?" needs a server clock, and the candidate board refuses a selection
+   * on the answer. A browser's clock is not a fact about the programme.
+   */
+  readonly deadlinePassed: boolean;
+  readonly hasApprovedException: boolean;
 }
 
 export const getStartupPools = defineUseCase({
@@ -366,13 +374,17 @@ export const getStartupPools = defineUseCase({
       });
     }
 
+    const deadline = effectiveDeadline(
+      cycle.deadlines.candidateSelection,
+      exceptions.data,
+      'candidate_selection',
+    );
+
     return ok<StartupPools>({
       pools,
-      selectionDeadline: effectiveDeadline(
-        cycle.deadlines.candidateSelection,
-        exceptions.data,
-        'candidate_selection',
-      ),
+      selectionDeadline: deadline,
+      deadlinePassed: ctx.clock.now().toISOString() > deadline,
+      hasApprovedException: isProtected(exceptions.data, 'candidate_selection'),
     });
   },
 });

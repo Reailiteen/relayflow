@@ -16,6 +16,7 @@ import type {
   StartupMember,
   CandidateId,
   DocumentId,
+  PoolEntryId,
   PositionId,
   UserId,
 } from '@relayflow/entities';
@@ -103,11 +104,82 @@ export interface CandidatePort {
   listForCycle(cycleId: CycleId): Promise<Result<Candidate[]>>;
   /** The pool shared with one position, with the candidate records attached. */
   listPool(positionId: PositionId): Promise<Result<PoolEntryWithCandidate[]>>;
+
+  /**
+   * Every pool entry in the cycle, across all positions.
+   *
+   * The QSTP board asks "how far has each of thirty startups got?" and needs
+   * pool counts for all of them at once. Without this the read is one query per
+   * position, which is a screen's layout dictating a database's access pattern.
+   */
+  listPoolForCycle(cycleId: CycleId): Promise<Result<PoolEntryWithCandidate[]>>;
+
+  findPoolEntry(id: PoolEntryId): Promise<Result<PoolEntry | null>>;
+
   setAvailability(
     id: CandidateId,
     availability: Candidate['availability'],
     confirmedAt: string,
   ): Promise<Result<Candidate>>;
+
+  /**
+   * Bulk import from Deema or a CSV.
+   *
+   * Returns what was created *and* what was skipped as a duplicate, because
+   * "imported 40 candidates" is not the same claim as "your file had 40 rows"
+   * and an operator needs to know which they got.
+   */
+  importMany(input: ImportCandidatesCommand): Promise<Result<ImportResult>>;
+
+  /**
+   * Shares candidates with a position — the Stage 3 handoff QSTP controls.
+   *
+   * Idempotent: re-sharing someone already in the pool is a no-op rather than a
+   * duplicate row, because operators will click twice.
+   */
+  shareWithPosition(input: SharePoolCommand): Promise<Result<{ added: number; skipped: number }>>;
+
+  /**
+   * Moves one candidate along a startup's own review pipeline.
+   *
+   * This is bookkeeping about the startup's process — shortlisted, interviewed,
+   * rejected — and carries no claim on the person. Reserving them is
+   * `selections.reserve`, and the two must not be conflated: this status is
+   * advisory and private to one startup, that one is exclusive and races.
+   */
+  updatePoolEntry(input: UpdatePoolEntryCommand): Promise<Result<PoolEntry>>;
+}
+
+export interface UpdatePoolEntryCommand {
+  readonly poolEntryId: PoolEntryId;
+  readonly status: PoolEntry['status'];
+  readonly reviewedAt: string;
+}
+
+export interface ImportCandidatesCommand {
+  readonly cycleId: CycleId;
+  readonly source: 'deema' | 'csv' | 'manual';
+  readonly rows: readonly {
+    fullName: string;
+    email: string;
+    skills: readonly string[];
+    cvUrl: string | null;
+    githubUrl: string | null;
+  }[];
+  readonly importedAt: string;
+}
+
+export interface ImportResult {
+  readonly imported: number;
+  /** Already in this cycle, matched on email. */
+  readonly duplicates: number;
+  readonly candidates: readonly Candidate[];
+}
+
+export interface SharePoolCommand {
+  readonly positionId: PositionId;
+  readonly candidateIds: readonly CandidateId[];
+  readonly sharedAt: string;
 }
 
 export interface PoolEntryWithCandidate {

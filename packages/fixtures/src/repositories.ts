@@ -210,6 +210,113 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       return Promise.resolve(ok(rows));
     },
 
+    listPoolForCycle: (cycleId) => {
+      const inCycle = new Set(
+        store.positions.filter((p) => p.cycleId === cycleId).map((p) => p.id),
+      );
+      const rows: PoolEntryWithCandidate[] = [];
+      for (const entry of store.poolEntries) {
+        if (!inCycle.has(entry.positionId)) continue;
+        const candidate = store.candidates.find((c) => c.id === entry.candidateId);
+        if (candidate) rows.push({ entry, candidate });
+      }
+      return Promise.resolve(ok(rows));
+    },
+
+    findPoolEntry: (id) => Promise.resolve(ok(store.poolEntries.find((e) => e.id === id) ?? null)),
+
+    updatePoolEntry: (input) => {
+      const entry = store.poolEntries.find((e) => e.id === input.poolEntryId);
+      if (!entry) return Promise.resolve(err(notFound('That candidate is not in this pool.')));
+
+      const next: PoolEntry = {
+        ...entry,
+        status: input.status,
+        // First time the startup acts on the card is when the review clock stops.
+        reviewedAt: entry.reviewedAt ?? (input.status === 'pending' ? null : input.reviewedAt),
+        updatedAt: input.reviewedAt,
+      };
+      store.poolEntries[store.poolEntries.indexOf(entry)] = next;
+      return Promise.resolve(ok(next));
+    },
+
+    importMany: (input) => {
+      const existing = new Set(
+        store.candidates
+          .filter((c) => c.cycleId === input.cycleId)
+          .map((c) => c.email.toLowerCase()),
+      );
+
+      const created: Candidate[] = [];
+      let duplicates = 0;
+
+      for (const row of input.rows) {
+        if (existing.has(row.email.toLowerCase())) {
+          duplicates += 1;
+          continue;
+        }
+        existing.add(row.email.toLowerCase());
+
+        const candidate: Candidate = {
+          id: uuid() as Candidate['id'],
+          cycleId: input.cycleId,
+          userId: null,
+          fullName: row.fullName,
+          email: row.email,
+          phone: null,
+          skills: row.skills,
+          cvUrl: row.cvUrl,
+          portfolioUrl: null,
+          githubUrl: row.githubUrl,
+          // Imported, not asked yet — which is exactly why the availability
+          // confirmation flow exists.
+          availability: 'unconfirmed',
+          availabilityConfirmedAt: null,
+          source: input.source,
+          createdAt: input.importedAt,
+          updatedAt: input.importedAt,
+        };
+        store.candidates.push(candidate);
+        created.push(candidate);
+      }
+
+      return Promise.resolve(
+        ok({ imported: created.length, duplicates, candidates: created }),
+      );
+    },
+
+    shareWithPosition: (input) => {
+      const already = new Set(
+        store.poolEntries
+          .filter((entry) => entry.positionId === input.positionId)
+          .map((entry) => entry.candidateId),
+      );
+
+      let added = 0;
+      let skipped = 0;
+
+      for (const candidateId of input.candidateIds) {
+        if (already.has(candidateId)) {
+          skipped += 1;
+          continue;
+        }
+        already.add(candidateId);
+        store.poolEntries.push({
+          id: uuid() as PoolEntry['id'],
+          positionId: input.positionId,
+          candidateId,
+          status: 'pending',
+          sharedAt: input.sharedAt,
+          reviewedAt: null,
+          createdAt: input.sharedAt,
+          updatedAt: input.sharedAt,
+        });
+        added += 1;
+      }
+
+      return Promise.resolve(ok({ added, skipped }));
+    },
+
     setAvailability: (id, availability, confirmedAt) => {
       const candidate = store.candidates.find((c) => c.id === id);
       if (!candidate) return Promise.resolve(err(notFound('Candidate not found.')));

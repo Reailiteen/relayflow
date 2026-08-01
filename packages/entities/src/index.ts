@@ -10,3 +10,4 @@ export * from './interview/interview';
 export * from './selection/selection';
 export * from './selection/exception';
 export * from './onboarding/document';
+export * from './board/board';

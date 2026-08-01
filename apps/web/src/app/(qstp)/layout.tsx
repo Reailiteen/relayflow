@@ -3,6 +3,7 @@ import { isQstp } from '@relayflow/access';
 import { getActiveCycleName, getActor } from '@/server/context';
 import { CurrentSection, QstpMobileNav, QstpSidebar } from './_components/nav';
 import { ActorSwitcher } from './_components/actor-switcher';
+import { UserMenu } from '../_components/user-menu';
 
 /**
  * The QSTP shell: a permanent sidebar beside a scrolling work area.
@@ -33,7 +34,7 @@ export default async function QstpLayout({ children }: { children: React.ReactNo
 
           <div className="ml-auto flex items-center gap-2">
             <ActorSwitcher current={actor.role} />
-            <span className="hidden text-xs text-text-muted sm:inline">{actor.fullName}</span>
+            <UserMenu name={actor.fullName} role={actor.role.replace('_', ' ')} />
           </div>
         </header>
 

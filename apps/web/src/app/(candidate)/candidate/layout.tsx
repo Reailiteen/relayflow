@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { isCandidate } from '@relayflow/access';
 import { getActor } from '@/server/context';
 import { CandidateNav } from './_components/nav';
+import { UserMenu } from '../../_components/user-menu';
 
 /**
  * The candidate shell.
@@ -24,7 +25,9 @@ export default async function CandidateLayout({ children }: { children: React.Re
           <span className="text-md font-semibold tracking-tight">RelayFlow</span>
         </Link>
         <CandidateNav />
-        <span className="ml-auto truncate text-sm text-text-muted">{actor.fullName}</span>
+        <div className="ml-auto">
+          <UserMenu name={actor.fullName} />
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-5">{children}</main>

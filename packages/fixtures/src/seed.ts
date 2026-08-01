@@ -70,6 +70,8 @@ export const ids = {
   canYusuf: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000004'),
   canMaryam: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000005'),
   canHassan: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000006'),
+  canDana: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000007'),
+  canRashid: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000008'),
 } as const;
 
 // "Now" for this fixture set: two days after the selection deadline, which is
@@ -283,6 +285,8 @@ export const positions: Position[] = [
     'approved',
     null,
   ),
+  // Left as 'submitted' on purpose: the positions tracker needs something to
+  // actually review, or the approve/send-back path is unreachable in the demo.
   position(
     ids.posBioinformatics,
     ids.pearl,
@@ -290,7 +294,7 @@ export const positions: Position[] = [
     ['R', 'Genomics'],
     1,
     20,
-    'approved',
+    'submitted',
     null,
   ),
   // Desert Bloom has 30 hours and has submitted nothing — a dashboard item.
@@ -351,6 +355,17 @@ export const candidates: Candidate[] = [
     'hassan.iqbal@example.com',
     ['Python', 'Statistics'],
     'available',
+  ),
+  // Imported but not yet sent to any startup — the state the candidates screen
+  // exists to resolve. Without these, "not yet shared" is always zero and the
+  // share-pool flow has nothing to operate on.
+  candidate(ids.canDana, 'Dana Farouk', 'dana.farouk@example.com', ['Java', 'Spring'], 'available'),
+  candidate(
+    ids.canRashid,
+    'Rashid Al-Naimi',
+    'rashid.alnaimi@example.com',
+    ['Figma', 'Prototyping'],
+    'unconfirmed',
   ),
 ];
 

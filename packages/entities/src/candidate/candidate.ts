@@ -121,6 +121,10 @@ export const POOL_ENTRY_STATUSES = [
   'shortlisted',
   'interview_requested',
   'interviewed',
+  // Interviewed and wanted, but not yet claimed. The gap between the two is
+  // where startups lose people, so it is worth being able to see who is sitting
+  // in it rather than inferring it from an absence.
+  'interested',
   'selected', // this startup selected them; may still lose the race
   'rejected',
   'withdrawn', // candidate is no longer available
