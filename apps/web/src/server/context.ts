@@ -55,3 +55,16 @@ export const getContext = cache(async (): Promise<UseCaseContext> => {
     }),
   };
 });
+
+/**
+ * The active cycle's name, for the sidebar.
+ *
+ * Chrome should not need a use-case and an authorization round trip just to
+ * print a heading, so this reads the repository directly. It exposes nothing
+ * the actor could not already see on any screen in this portal.
+ */
+export const getActiveCycleName = cache(async (): Promise<string | null> => {
+  const ctx = await getContext();
+  const result = await ctx.repos.cycles.findActive();
+  return result.ok ? (result.data?.name ?? null) : null;
+});

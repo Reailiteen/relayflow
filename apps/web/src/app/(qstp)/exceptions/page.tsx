@@ -35,8 +35,7 @@ export default async function ExceptionsPage() {
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h1 className="text-lg font-semibold tracking-tight">Exception requests</h1>
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p className="text-sm text-text-muted">
           An approved exception protects the startup&rsquo;s hours from redistribution.
         </p>

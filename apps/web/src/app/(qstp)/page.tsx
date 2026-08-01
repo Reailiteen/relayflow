@@ -87,11 +87,10 @@ export default async function QstpDashboardPage() {
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-lg font-semibold tracking-tight">{summary.cycleName}</h1>
-          <Badge tone="info">{summary.stage}</Badge>
-        </div>
+      {/* The cycle name lives in the sidebar and the section name in the top
+          bar, so this line carries only what neither of them says. */}
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Badge tone="info">{summary.stage}</Badge>
         <p className="text-sm text-text-muted">
           {summary.startupCount} startups · {summary.pendingSelections} pending selections
         </p>

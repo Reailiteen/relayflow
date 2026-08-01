@@ -1,14 +1,14 @@
 import { redirect } from 'next/navigation';
 import { isQstp } from '@relayflow/access';
-import { getActor } from '@/server/context';
-import { QstpNav } from './_components/nav';
+import { getActiveCycleName, getActor } from '@/server/context';
+import { CurrentSection, QstpMobileNav, QstpSidebar } from './_components/nav';
 import { ActorSwitcher } from './_components/actor-switcher';
 
 /**
- * The QSTP shell.
+ * The QSTP shell: a permanent sidebar beside a scrolling work area.
  *
  * A route group per portal — (qstp), (startup), (candidate) — because the three
- * audiences need genuinely different chrome, but share one system underneath.
+ * audiences need genuinely different chrome while sharing one system underneath.
  *
  * The redirect here is convenience, not security: it puts people in the right
  * place rather than showing them an error. The actual protection is in the
@@ -18,17 +18,27 @@ export default async function QstpLayout({ children }: { children: React.ReactNo
   const actor = await getActor();
   if (!isQstp(actor)) redirect('/signin');
 
-  return (
-    <div className="flex h-dvh flex-col bg-background">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-        <QstpNav />
-        <div className="ml-auto flex items-center gap-2">
-          <ActorSwitcher current={actor.role} />
-          <span className="hidden text-xs text-text-muted sm:inline">{actor.fullName}</span>
-        </div>
-      </header>
+  const cycleName = await getActiveCycleName();
 
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+  return (
+    <div className="flex h-dvh bg-background">
+      <QstpSidebar {...(cycleName ? { cycleName } : {})} />
+
+      {/* min-w-0 so wide tables scroll inside the work area rather than
+          stretching the whole page and pushing the sidebar off screen. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
+          <QstpMobileNav {...(cycleName ? { cycleName } : {})} />
+          <CurrentSection />
+
+          <div className="ml-auto flex items-center gap-2">
+            <ActorSwitcher current={actor.role} />
+            <span className="hidden text-xs text-text-muted sm:inline">{actor.fullName}</span>
+          </div>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      </div>
     </div>
   );
 }
