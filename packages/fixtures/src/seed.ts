@@ -46,6 +46,7 @@ export const ids = {
   agritech: id<'StartupId'>('57a27000-0000-4000-8000-000000000004'),
   pearl: id<'StartupId'>('57a27000-0000-4000-8000-000000000005'),
   lusail: id<'StartupId'>('57a27000-0000-4000-8000-000000000006'),
+  msheireb: id<'StartupId'>('57a27000-0000-4000-8000-000000000007'),
 
   // Users
   qstpManager: id<'UserId'>('05e70000-0000-4000-8000-000000000001'),
@@ -62,6 +63,7 @@ export const ids = {
   posDataAnalyst: id<'PositionId'>('9051f100-0000-4000-8000-000000000003'),
   posRiskEng: id<'PositionId'>('9051f100-0000-4000-8000-000000000004'),
   posBioinformatics: id<'PositionId'>('9051f100-0000-4000-8000-000000000005'),
+  posDataEng: id<'PositionId'>('9051f100-0000-4000-8000-000000000006'),
 
   // Candidates
   canLayla: id<'CandidateId'>('ca4d1da7-0000-4000-8000-000000000001'),
@@ -129,6 +131,10 @@ export const startups: Startup[] = [
   ),
   startup(ids.pearl, 'Pearl Diagnostics', 'pearl-diagnostics', 'HealthTech', 'info@pearldx.qa'),
   startup(ids.lusail, 'Lusail Mobility', 'lusail-mobility', 'Mobility', 'hello@lusailmobility.qa'),
+  // Funded, roles approved, and still waiting on candidates. This is the one
+  // startup the QSTP board can actually act on — without it every card sits in
+  // a stage that moves by itself and the board looks decorative.
+  startup(ids.msheireb, 'Msheireb Data Systems', 'msheireb-data', 'Data', 'ops@msheireb.qa'),
 ];
 
 // ─── Users & members ─────────────────────────────────────────────────────────
@@ -174,7 +180,7 @@ export const startupMembers: StartupMember[] = [
 ];
 
 // ─── Allocations ─────────────────────────────────────────────────────────────
-// 60 + 40 + 40 + 30 + 20 + 0 = 190 of 500 funded hours allocated.
+// 60 + 40 + 40 + 30 + 20 + 0 + 20 = 210 of 500 funded hours allocated.
 
 const allocation = (
   n: number,
@@ -212,6 +218,7 @@ export const allocations: Allocation[] = [
   allocation(5, ids.pearl, 20, 58, 'confirmed', 'Narrow scope but well defined.'),
   // Zero-hour startup: the redistribution screen's primary audience.
   allocation(6, ids.lusail, 0, 37, 'confirmed', 'Below threshold this cycle; waitlisted.'),
+  allocation(7, ids.msheireb, 20, 66, 'confirmed', 'Clear brief, first cycle in the programme.'),
 ];
 
 // ─── Positions ───────────────────────────────────────────────────────────────
@@ -295,6 +302,19 @@ export const positions: Position[] = [
     1,
     20,
     'submitted',
+    null,
+  ),
+  // Approved and waiting on a pool, which is the state the QSTP board exists to
+  // clear. Its skills overlap candidates who are available and unclaimed, so
+  // dragging this card to "Candidate pool sent" has something real to share.
+  position(
+    ids.posDataEng,
+    ids.msheireb,
+    'Data Engineering Intern',
+    ['Python', 'SQL', 'Statistics'],
+    1,
+    20,
+    'approved',
     null,
   ),
   // Desert Bloom has 30 hours and has submitted nothing — a dashboard item.

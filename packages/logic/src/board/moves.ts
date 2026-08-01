@@ -4,10 +4,12 @@ import {
   blocksOthers,
   candidateColumnFor,
   checkCandidateMove,
+  checkPositionMove,
   checkStartupMove,
   effectiveDeadline,
   isSelectable,
   moveCandidateCardInput,
+  movePositionCardInput,
   moveStartupCardInput,
   type CandidateId,
   type CandidateMoveFacts,
@@ -15,7 +17,7 @@ import {
 } from '@relayflow/entities';
 import type { UseCaseContext } from '../context';
 import { defineUseCase, requireActor } from '../use-case';
-import { listStartupSummaries, sharePool } from '../qstp/operations';
+import { getPositionTracker, listStartupSummaries, reviewPosition, sharePool } from '../qstp/operations';
 import { selectCandidate } from '../selection/select-candidate';
 
 /**
@@ -323,3 +325,49 @@ async function candidateFacts(
     ),
   });
 }
+
+// ─── The positions review board ──────────────────────────────────────────────
+
+/**
+ * Move a role between review columns.
+ *
+ * This is the one board where a drag is the primary action rather than the
+ * exception, because `submitted` and `approved` are statuses QSTP writes rather
+ * than facts it observes. So the move runs `reviewPosition` — the same use-case
+ * the Approve button calls — and inherits its rules rather than restating them.
+ *
+ * The facts are rebuilt here from storage. The browser's copy exists so an
+ * illegal drag snaps back without a round trip; it is never what decides.
+ */
+export const movePositionCard = defineUseCase({
+  name: 'board.movePositionCard',
+  input: movePositionCardInput,
+  authorize: { capability: 'position:review' as const },
+
+  execute: async (ctx, input) => {
+    const tracker = await getPositionTracker(ctx, {});
+    if (!tracker.ok) return tracker;
+
+    const row = tracker.data.rows.find((candidate) => candidate.position.id === input.positionId);
+    if (!row) return err(notFound('Position not found.'));
+
+    const verdict = checkPositionMove(input.to, row.facts);
+    if (!verdict.allowed) {
+      return err(conflict(verdict.reason ?? 'That move is not allowed.'));
+    }
+
+    // `filled` and `submitted` are refused above, so only the two review
+    // decisions reach here.
+    const decision = input.to === 'approved' ? 'approved' : 'changes_requested';
+
+    if (verdict.requiresNote && !input.note?.trim()) {
+      return err(validation('Say what needs changing — the startup sees only this note.'));
+    }
+
+    return reviewPosition(ctx, {
+      positionId: input.positionId,
+      decision,
+      note: input.note?.trim() ? input.note.trim() : null,
+    });
+  },
+});

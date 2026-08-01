@@ -1,18 +1,25 @@
 import { z } from 'zod';
 import { err, notFound, ok, validation } from '@relayflow/core';
 import {
+  deriveCandidatePipelineStage,
   deriveStartupCycleStage,
   effectiveDeadline,
+  fitsInAllocation,
   isProtected,
   isSelectable,
   positionId,
+  positionReviewStage,
   reservesHours,
   startupCycleFlags,
   totalWeeklyHours,
   type BoardFlag,
   type Candidate,
   type CandidateDocument,
+  type CandidatePipelineFacts,
+  type CandidatePipelineStage,
   type Position,
+  type PositionMoveFacts,
+  type PositionReviewStage,
   type Selection,
   type Startup,
   type StartupCycleFacts,
@@ -194,6 +201,13 @@ export interface PositionRow {
   readonly startup: Startup | null;
   readonly poolSize: number;
   readonly selectionCount: number;
+  /** Which review column it sits in. Null for drafts and withdrawn roles. */
+  readonly stage: PositionReviewStage | null;
+  /**
+   * The facts the move rules need, sent to the browser so a drag can be refused
+   * without a round trip. Re-derived server-side before anything is written.
+   */
+  readonly facts: PositionMoveFacts;
 }
 
 export interface PositionTracker {
@@ -231,13 +245,35 @@ export const getPositionTracker = defineUseCase({
       const pool = await ctx.repos.candidates.listPool(position.id);
       if (!pool.ok) return err(pool.error);
 
+      // Hours the startup has committed across its *other* roles, so this one
+      // can be judged against what is actually left.
+      const allocation = allocations.data.find(
+        (a) => a.startupId === position.startupId && a.status === 'confirmed',
+      );
+      const siblings = positions.data.filter(
+        (p) => p.startupId === position.startupId && p.id !== position.id && reservesHours(p.status),
+      );
+
+      const active = selections.data.filter(
+        (s: Selection) => s.positionId === position.id && s.status !== 'released',
+      ).length;
+
       rows.push({
         position,
         startup: startups.data.find((s) => s.id === position.startupId) ?? null,
         poolSize: pool.data.length,
-        selectionCount: selections.data.filter(
-          (s: Selection) => s.positionId === position.id && s.status !== 'released',
-        ).length,
+        selectionCount: active,
+        stage: positionReviewStage(position.status),
+        facts: {
+          currentStatus: position.status,
+          poolShared: pool.data.length > 0,
+          activeSelections: active,
+          exceedsAllocation: !fitsInAllocation(
+            allocation?.weeklyHours ?? 0,
+            siblings.map((p) => totalWeeklyHours(p)),
+            totalWeeklyHours(position),
+          ),
+        },
       });
     }
 
@@ -311,6 +347,9 @@ export const reviewPosition = defineUseCase({
 
 export interface CandidateRow {
   readonly candidate: Candidate;
+  /** Which handoff column they sit in — derived, never stored. */
+  readonly stage: CandidatePipelineStage;
+  readonly facts: CandidatePipelineFacts;
   /** Positions this person has been shared with. */
   readonly pools: readonly { positionId: string; positionTitle: string; startupName: string }[];
   readonly selection: Selection | null;
@@ -357,6 +396,10 @@ export const getCandidateAdminView = defineUseCase({
 
     // One pool read per position, joined into a candidate-keyed map.
     const poolsByCandidate = new Map<string, CandidateRow['pools'][number][]>();
+    // How many of a candidate's pool entries a startup has actually acted on,
+    // and who has been interviewed — both needed to place them in a column.
+    const engagedByCandidate = new Map<string, number>();
+    const interviewedIds = new Set<string>();
     const shareable: {
       id: string;
       title: string;
@@ -379,6 +422,12 @@ export const getCandidateAdminView = defineUseCase({
         });
       }
 
+      const interviews = await ctx.repos.interviews.listForPosition(position.id);
+      if (!interviews.ok) return err(interviews.error);
+      for (const interview of interviews.data) {
+        if (interview.status === 'completed') interviewedIds.add(interview.candidateId);
+      }
+
       for (const row of pool.data) {
         const list = poolsByCandidate.get(row.candidate.id) ?? [];
         list.push({
@@ -387,6 +436,13 @@ export const getCandidateAdminView = defineUseCase({
           startupName: nameOf(position.startupId),
         });
         poolsByCandidate.set(row.candidate.id, list);
+
+        if (row.entry.status !== 'pending') {
+          engagedByCandidate.set(
+            row.candidate.id,
+            (engagedByCandidate.get(row.candidate.id) ?? 0) + 1,
+          );
+        }
       }
     }
 
@@ -398,9 +454,23 @@ export const getCandidateAdminView = defineUseCase({
             (s.status === 'reserved' || s.status === 'confirmed'),
         ) ?? null;
 
+      const pools = poolsByCandidate.get(candidate.id) ?? [];
+      const engaged = engagedByCandidate.get(candidate.id) ?? 0;
+
+      const facts: CandidatePipelineFacts = {
+        availability: candidate.availability,
+        poolCount: pools.length,
+        poolsEngaged: engaged,
+        hasCompletedInterview: interviewedIds.has(candidate.id),
+        hasActiveSelection: held?.status === 'reserved',
+        hasConfirmedSelection: held?.status === 'confirmed',
+      };
+
       return {
         candidate,
-        pools: poolsByCandidate.get(candidate.id) ?? [],
+        stage: deriveCandidatePipelineStage(facts),
+        facts,
+        pools,
         selection: held,
         heldBy: held ? nameOf(held.startupId) : null,
       };

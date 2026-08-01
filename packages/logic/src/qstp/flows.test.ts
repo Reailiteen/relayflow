@@ -135,15 +135,15 @@ describe('QSTP demo flows', () => {
       const ctx = contextFor(DEV_ACTORS.manager(), store);
 
       const before = await getQstpDashboard(ctx, {});
-      expect(before.ok && before.data.budget.allocated).toBe(190);
+      expect(before.ok && before.data.budget.allocated).toBe(210);
 
       const result = await reclaimHours(ctx, { startupId: ids.fintech, exceptionId: null });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.data.reclaimed).toBe(40);
 
       const after = await getQstpDashboard(ctx, {});
-      expect(after.ok && after.data.budget.allocated).toBe(150);
-      expect(after.ok && after.data.budget.unallocated).toBe(350);
+      expect(after.ok && after.data.budget.allocated).toBe(170);
+      expect(after.ok && after.data.budget.unallocated).toBe(330);
     });
 
     it('refuses when the startup holds an approved exception', async () => {
@@ -194,9 +194,9 @@ describe('QSTP demo flows', () => {
         expect(granted.data.fromRedistribution).toBe(true);
       }
 
-      // 190 - 40 reclaimed + 20 granted = 170.
+      // 210 - 40 reclaimed + 20 granted = 190.
       const after = await getQstpDashboard(ctx, {});
-      expect(after.ok && after.data.budget.allocated).toBe(170);
+      expect(after.ok && after.data.budget.allocated).toBe(190);
     });
 
     it('refuses a grant that would exceed the funded total', async () => {
@@ -206,7 +206,7 @@ describe('QSTP demo flows', () => {
       // Squeeze the cycle so only 10 hours remain unallocated.
       const cycle = store.cycles[0];
       if (!cycle) throw new Error('fixture has no cycle');
-      store.cycles[0] = { ...cycle, fundedWeeklyHours: 200 };
+      store.cycles[0] = { ...cycle, fundedWeeklyHours: 220 };
 
       const result = await grantHours(ctx, { startupId: ids.lusail, weeklyHours: 60, justification: null });
       expect(result.ok).toBe(false);

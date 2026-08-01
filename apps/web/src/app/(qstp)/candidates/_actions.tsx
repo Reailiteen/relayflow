@@ -159,8 +159,41 @@ export function SharePoolButton({
   positions: CandidateAdminView['shareablePositions'];
 }) {
   const [open, setOpen] = useState(false);
+  if (positions.length === 0) return null;
+
+  return (
+    <>
+      <Button size="xs" variant="primary" onClick={() => setOpen(true)}>
+        <Send className="size-3" />
+        Share pool
+      </Button>
+      <SharePoolDialog open={open} onOpenChange={setOpen} rows={rows} positions={positions} />
+    </>
+  );
+}
+
+/**
+ * The dialog itself, controlled.
+ *
+ * Split out from the button so the board can open it with a candidate already
+ * ticked. Both routes end in the same `sharePool` call — a drag is a shortcut
+ * into this dialog, never a second way to write.
+ */
+export function SharePoolDialog({
+  open,
+  onOpenChange,
+  rows,
+  positions,
+  preselected,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  rows: readonly CandidateRow[];
+  positions: CandidateAdminView['shareablePositions'];
+  preselected?: readonly string[] | undefined;
+}) {
   const [positionId, setPositionId] = useState<string | null>(positions[0]?.id ?? null);
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [chosen, setChosen] = useState<Set<string>>(new Set(preselected ?? []));
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -203,12 +236,21 @@ export function SharePoolButton({
 
   return (
     <>
-      <Button size="xs" variant="primary" onClick={() => setOpen(true)}>
-        <Send className="size-3" />
-        Share pool
-      </Button>
-
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          onOpenChange(next);
+          // Reset on close so reopening from a different card does not inherit
+          // the last selection.
+          if (!next) {
+            setChosen(new Set());
+            setMessage(null);
+            setError(null);
+          } else if (preselected) {
+            setChosen(new Set(preselected));
+          }
+        }}
+      >
         <DialogContent
           title="Share candidates with a position"
           description="The startup can review and interview whoever you send."

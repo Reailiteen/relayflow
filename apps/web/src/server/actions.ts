@@ -11,6 +11,7 @@ import {
   grantHours,
   importCandidates,
   moveCandidateCard,
+  movePositionCard,
   moveStartupCard,
   reclaimHours,
   requestException,
@@ -74,6 +75,10 @@ export async function submitPositionAction(input: unknown) {
 
 export async function requestExceptionAction(input: unknown) {
   return revalidate(await action(requestException)(input));
+}
+
+export async function movePositionCardAction(input: unknown) {
+  return revalidate(await action(movePositionCard)(input));
 }
 
 export async function reviewPositionAction(input: unknown) {

@@ -1,9 +1,10 @@
 import { can } from '@relayflow/access';
-import { totalWeeklyHours } from '@relayflow/entities';
-import { getPositionTracker, type PositionRow as PositionRowData } from '@relayflow/logic';
+import { getPositionTracker } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
-import { PositionStatusBadge, ReviewActions } from './_review';
+import { ViewSwitch } from '@/components/view-switch';
+import { PositionBoard } from './_board';
+import { PositionTable } from './_table';
 
 export const metadata = { title: 'Positions' };
 
@@ -11,16 +12,23 @@ const date = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 /**
- * Flow 3: track position submissions and review them.
+ * Flow 3: track submissions and review them.
  *
- * Two panels because there are two different problems. Roles that arrived and
- * need a decision are work QSTP can do now; startups that have submitted
- * nothing are work QSTP has to chase. Mixing them into one list would hide the
- * second behind the first.
+ * Both views come from one read, so they cannot disagree. The table is for
+ * reading the detail of a role — hours, supervisor, what was sent back. The
+ * board is for working the queue: everything awaiting review is one column, and
+ * a decision is a drag.
+ *
+ * Startups that submitted nothing sit outside both, in their own panel. They
+ * are not a column because they have no card — the work there is chasing, not
+ * reviewing, and folding them in would hide it.
  */
-export default async function PositionsPage() {
-  const actor = await getActor();
-  const ctx = await getContext();
+export default async function PositionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
   const result = await getPositionTracker(ctx, {});
 
   if (!result.ok) {
@@ -34,128 +42,119 @@ export default async function PositionsPage() {
   }
 
   const { rows, notStarted, submissionDeadline, deadlinePassed } = result.data;
+  const board = view === 'board';
   const canReview = can(actor, { capability: 'position:review' });
+
   const awaiting = rows.filter(
-    (row) => row.position.status === 'submitted' || row.position.status === 'changes_requested',
+    (row) => row.stage === 'submitted' || row.stage === 'changes_requested',
   );
-  const settled = rows.filter(
-    (row) => row.position.status !== 'submitted' && row.position.status !== 'changes_requested',
-  );
+  const overAllocation = rows.filter((row) => row.facts.exceedsAllocation);
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <p className="text-sm text-text-muted">
-          Submissions closed {date(submissionDeadline)}
-          {deadlinePassed ? ' — the deadline has passed.' : '.'}
-        </p>
-      </header>
-
-      <MetricBar className="lg:grid-cols-4">
-        <Metric label="Roles submitted" value={rows.length} />
-        <Metric
-          label="Awaiting review"
-          value={awaiting.length}
-          tone={awaiting.length > 0 ? 'warning' : 'default'}
-        />
-        <Metric label="Approved" value={rows.filter((r) => r.position.status === 'approved').length} />
-        <Metric
-          label="Startups silent"
-          value={notStarted.length}
-          tone={notStarted.length > 0 ? 'critical' : 'default'}
-        />
-      </MetricBar>
-
-      <Panel>
-        <PanelHeader
-          title="Awaiting review"
-          aside={
-            awaiting.length > 0 ? (
-              <Badge tone="warning">{awaiting.length}</Badge>
-            ) : (
-              <Badge tone="positive">clear</Badge>
-            )
-          }
-        />
-        {awaiting.length === 0 ? (
-          <EmptyState>Nothing waiting on you.</EmptyState>
-        ) : (
-          awaiting.map((row) => (
-            <PositionRow key={row.position.id} row={row} canReview={canReview} />
-          ))
-        )}
-      </Panel>
-
-      {notStarted.length > 0 && (
-        <Panel>
-          <PanelHeader
-            title="Allocated but nothing submitted"
-            aside={<Badge tone="critical">{notStarted.length}</Badge>}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3 pb-0">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="text-sm text-text-muted">
+            Submissions closed {date(submissionDeadline)}
+            {deadlinePassed ? ' — the deadline has passed.' : '.'}
+          </p>
+          <ViewSwitch
+            current={board ? 'board' : 'table'}
+            options={[
+              { value: 'table', label: 'Table', href: '/positions' },
+              { value: 'board', label: 'Board', href: '/positions?view=board' },
+            ]}
           />
-          {notStarted.map((entry) => (
-            <div
-              key={entry.startup.id}
-              className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{entry.startup.name}</div>
-                <p className="text-xs text-text-muted">
-                  Holds {entry.allocatedHours} weekly hours and has submitted no roles.
-                </p>
-              </div>
-              <a
-                href={`mailto:${entry.startup.contactEmail}`}
-                className="shrink-0 text-sm text-accent hover:underline"
-              >
-                Email them
-              </a>
-            </div>
-          ))}
-        </Panel>
-      )}
+        </header>
 
-      {settled.length > 0 && (
-        <Panel>
-          <PanelHeader
-            title="Decided"
-            aside={<span className="text-xs text-text-muted">{settled.length}</span>}
+        <MetricBar className="lg:grid-cols-4">
+          <Metric label="Roles submitted" value={rows.length} />
+          <Metric
+            label="Awaiting review"
+            value={awaiting.length}
+            tone={awaiting.length > 0 ? 'warning' : 'default'}
           />
-          {settled.map((row) => (
-            <PositionRow key={row.position.id} row={row} canReview={false} />
-          ))}
-        </Panel>
-      )}
-    </div>
-  );
-}
-
-function PositionRow({ row, canReview }: { row: PositionRowData; canReview: boolean }) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2 last:border-b-0">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate font-medium">{row.position.title}</span>
-          <PositionStatusBadge status={row.position.status} />
-          <span className="text-sm text-text-muted">{row.startup?.name ?? 'Unknown startup'}</span>
-        </div>
-        <p className="mt-0.5 text-sm text-text-muted">
-          {row.position.internCount} intern{row.position.internCount === 1 ? '' : 's'} ·{' '}
-          {row.position.hoursPerIntern}h each ={' '}
-          <span className="font-medium text-text-secondary">
-            {totalWeeklyHours(row.position)}h/week
-          </span>{' '}
-          · {row.position.durationWeeks} weeks
-          {row.position.supervisorName && ` · ${row.position.supervisorName}`}
-        </p>
-        <p className="mt-0.5 text-xs text-text-muted">
-          {row.poolSize} in pool · {row.selectionCount} selected
-        </p>
-        {row.position.reviewNote && (
-          <p className="mt-1 text-sm text-warning-text">Sent back: {row.position.reviewNote}</p>
-        )}
+          <Metric
+            label="Over allocation"
+            value={overAllocation.length}
+            tone={overAllocation.length > 0 ? 'critical' : 'default'}
+          />
+          <Metric
+            label="Startups silent"
+            value={notStarted.length}
+            tone={notStarted.length > 0 ? 'critical' : 'default'}
+          />
+        </MetricBar>
       </div>
 
-      {canReview && <ReviewActions positionId={row.position.id} title={row.position.title} />}
+      {board ? (
+        <PositionBoard rows={rows} editable={canReview} />
+      ) : (
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3">
+          <Panel>
+            <PanelHeader
+              title="Awaiting review"
+              aside={
+                awaiting.length > 0 ? (
+                  <Badge tone="warning">{awaiting.length}</Badge>
+                ) : (
+                  <Badge tone="positive">clear</Badge>
+                )
+              }
+            />
+            {awaiting.length === 0 ? (
+              <EmptyState>Nothing waiting on you.</EmptyState>
+            ) : (
+              <PositionTable rows={awaiting} canReview={canReview} />
+            )}
+          </Panel>
+
+          {notStarted.length > 0 && (
+            <Panel>
+              <PanelHeader
+                title="Allocated but nothing submitted"
+                aside={<Badge tone="critical">{notStarted.length}</Badge>}
+              />
+              {notStarted.map((entry) => (
+                <div
+                  key={entry.startup.id}
+                  className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{entry.startup.name}</div>
+                    <p className="text-xs text-text-muted">
+                      Holds {entry.allocatedHours} weekly hours and has submitted no roles.
+                    </p>
+                  </div>
+                  <a
+                    href={`mailto:${entry.startup.contactEmail}`}
+                    className="shrink-0 text-sm text-accent hover:underline"
+                  >
+                    Email them
+                  </a>
+                </div>
+              ))}
+            </Panel>
+          )}
+
+          {rows.length > awaiting.length && (
+            <Panel>
+              <PanelHeader
+                title="Decided"
+                aside={
+                  <span className="text-xs text-text-muted">{rows.length - awaiting.length}</span>
+                }
+              />
+              <PositionTable
+                rows={rows.filter(
+                  (row) => row.stage !== 'submitted' && row.stage !== 'changes_requested',
+                )}
+                canReview={false}
+              />
+            </Panel>
+          )}
+        </div>
+      )}
     </div>
   );
 }

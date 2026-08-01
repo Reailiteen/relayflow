@@ -28,7 +28,7 @@ import { Badge, Dialog, DialogClose, DialogTrigger, DrawerContent, cn } from '@r
 
 const SECTIONS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, ready: true },
-  { href: '/startups', label: 'Startups', icon: Boxes, ready: false },
+  { href: '/startups', label: 'Startups', icon: Boxes, ready: true },
   { href: '/allocation', label: 'Allocation', icon: Wallet, ready: true },
   { href: '/positions', label: 'Positions', icon: ClipboardList, ready: false },
   { href: '/candidates', label: 'Candidates', icon: Users, ready: false },

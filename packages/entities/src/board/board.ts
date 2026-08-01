@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isSelectable, type AvailabilityStatus, type PoolEntryStatus } from '../candidate/candidate';
+import type { PositionStatus } from '../position/position';
 
 /**
  * The two Kanban boards, as domain rules rather than as a UI feature.
@@ -218,16 +219,20 @@ export function checkStartupMove(
     );
   }
 
-  // The deadline gate. It applies only up to selection, because a startup that
-  // already has an intern is no longer racing that clock.
-  if (
-    startupStageIndex(to) <= startupStageIndex('candidate_selected') &&
-    facts.overdue &&
-    !facts.approvedException
-  ) {
+  // The deadline gate, and it applies to exactly one column.
+  //
+  // `candidate_selected` is the moment a startup carries on participating: it
+  // has committed to an intern. Doing that past the deadline with no approved
+  // exception is the thing the programme does not allow, and the fix is an
+  // exception rather than a shrug.
+  //
+  // Deliberately *not* applied to `pool_sent`. Sending candidates to a startup
+  // that is late is how QSTP unblocks it — gating that would punish the startup
+  // for a delay QSTP is in the middle of fixing.
+  if (to === 'candidate_selected' && facts.overdue && !facts.approvedException) {
     return refuse(
       'The selection deadline has passed and this startup has no approved exception, ' +
-        'so it cannot be advanced any further this cycle.',
+        'so a selection cannot be recorded for it this cycle.',
       { label: 'Review exceptions', href: '/exceptions' },
     );
   }
@@ -432,18 +437,26 @@ export function checkCandidateMove(
         'Another startup reserved this candidate first. Selection is first-come-first-served.',
       );
     }
+
+    const reservation =
+      'Selecting reserves this candidate immediately, and no other startup can claim them. ' +
+      'If someone selected them in the last few seconds this will be refused.';
+
+    // A missed deadline is not a lock on the button — the programme's answer to
+    // it is redistribution, and hours are reclaimed rather than selections
+    // refused. Saying so here is the difference between a startup that knows it
+    // is exposed and one that finds out when its hours disappear.
     if (facts.deadlinePassed && !facts.hasApprovedException) {
-      return no(
-        'Your selection deadline has passed. Request an extension before selecting anyone else.',
-      );
+      return {
+        allowed: true,
+        reason: null,
+        confirm:
+          'Your selection deadline has passed and you have no approved extension, so these ' +
+          `hours can be reclaimed and given to another startup. ${reservation}`,
+      };
     }
-    return {
-      allowed: true,
-      reason: null,
-      confirm:
-        'Selecting reserves this candidate immediately, and no other startup can claim them. ' +
-        'If someone selected them in the last few seconds this will be refused.',
-    };
+
+    return { allowed: true, reason: null, confirm: reservation };
   }
 
   if (to === 'interviewed' && !facts.hasInterview && from !== 'interview_requested') {
@@ -466,4 +479,263 @@ export const moveStartupCardInput = z.object({
 export const moveCandidateCardInput = z.object({
   poolEntryId: z.uuid(),
   to: candidateBoardColumn,
+});
+
+// ─── Board 3: positions awaiting QSTP review ─────────────────────────────────
+
+/**
+ * The review pipeline for one cycle's roles.
+ *
+ * Unlike the startup board, these columns are a *stored* status rather than a
+ * derived one — `submitted` and `approved` are facts QSTP writes. That makes
+ * this the one board where dragging is the primary interaction rather than the
+ * exception: moving a card between the first three columns is the review.
+ *
+ * `filled` stays derived and undraggable. A role is filled because somebody
+ * confirmed an intern, and a board that let you claim otherwise would be
+ * asserting a hire that never happened.
+ */
+export const POSITION_REVIEW_STAGES = [
+  'submitted',
+  'changes_requested',
+  'approved',
+  'filled',
+] as const;
+
+export type PositionReviewStage = (typeof POSITION_REVIEW_STAGES)[number];
+
+export const POSITION_REVIEW_LABELS: Readonly<Record<PositionReviewStage, string>> = {
+  submitted: 'Awaiting review',
+  changes_requested: 'Changes requested',
+  approved: 'Approved',
+  filled: 'Filled',
+};
+
+/**
+ * Which column a role sits in.
+ *
+ * `draft` and `withdrawn` have no column: one has not been sent to QSTP yet and
+ * the other has been taken back, so neither is in the review queue at all. The
+ * caller filters them out rather than the board inventing a home for them.
+ */
+export function positionReviewStage(status: PositionStatus): PositionReviewStage | null {
+  switch (status) {
+    case 'submitted':
+      return 'submitted';
+    case 'changes_requested':
+      return 'changes_requested';
+    case 'approved':
+      return 'approved';
+    case 'filled':
+      return 'filled';
+    default:
+      return null;
+  }
+}
+
+export interface PositionMoveFacts {
+  readonly currentStatus: PositionStatus;
+  /** Candidates have already been handed to the startup against this role. */
+  readonly poolShared: boolean;
+  readonly activeSelections: number;
+  /** The role asks for more hours than the startup's allocation allows. */
+  readonly exceedsAllocation: boolean;
+}
+
+export interface PositionMoveVerdict {
+  readonly allowed: boolean;
+  readonly reason: string | null;
+  /** Set when the move is legal but needs a written note — sending one back. */
+  readonly requiresNote: boolean;
+}
+
+/**
+ * Whether a role may move between review columns.
+ *
+ * The rule that earns its place here is the last one: approving a role that
+ * exceeds its startup's allocation would commit hours the programme has not
+ * funded. The startup's own form already refuses to submit one, so reaching
+ * this branch means the allocation shrank *after* submission — which is exactly
+ * the case a human reviewer would miss.
+ */
+export function checkPositionMove(
+  to: PositionReviewStage,
+  facts: PositionMoveFacts,
+): PositionMoveVerdict {
+  const from = positionReviewStage(facts.currentStatus);
+
+  const no = (reason: string): PositionMoveVerdict => ({
+    allowed: false,
+    reason,
+    requiresNote: false,
+  });
+
+  if (from === null) return no('This role has not been submitted for review.');
+  if (from === to) return no('That role is already in this column.');
+
+  if (from === 'filled') {
+    return no('This role is filled. Release the intern before changing its status.');
+  }
+
+  switch (to) {
+    case 'filled':
+      return no(
+        'A role becomes filled when a startup confirms an intern, not by being moved here.',
+      );
+
+    case 'submitted':
+      return no(
+        'Only the startup can resubmit a role. Request changes and they will send it back.',
+      );
+
+    case 'changes_requested':
+      if (facts.activeSelections > 0) {
+        return no(
+          'A candidate is already reserved against this role. Resolve the selection before ' +
+            'asking the startup to change it.',
+        );
+      }
+      // Legal, but the startup sees only the note — so there has to be one.
+      return { allowed: true, reason: null, requiresNote: true };
+
+    case 'approved':
+      if (facts.exceedsAllocation) {
+        return no(
+          'This role needs more weekly hours than the startup has been allocated. ' +
+            'Approving it would commit hours the programme has not funded.',
+        );
+      }
+      return { allowed: true, reason: null, requiresNote: false };
+  }
+}
+
+// ─── Board 4: the candidate handoff ──────────────────────────────────────────
+
+/**
+ * Where each candidate has got to, from QSTP's side.
+ *
+ * This is the only board about people rather than work, and its columns answer
+ * one question: who is sitting idle. A candidate in `imported` has been paid for
+ * by nobody's attention — they are in the system and no startup has seen them.
+ * That column being tall is the single most actionable thing on the screen.
+ *
+ * Everything past `shared` is a startup's doing, so QSTP can only ever perform
+ * the first move. The rest refuse with a pointer rather than pretending.
+ */
+export const CANDIDATE_PIPELINE_STAGES = [
+  'imported', // in no pool — nobody is looking at them
+  'shared', // handed to a startup, untouched
+  'reviewing', // a startup has shortlisted or requested an interview
+  'interviewed',
+  'reserved', // a startup holds them
+  'placed', // reservation confirmed
+  'unavailable', // employed, uninterested, withdrawn
+] as const;
+
+export type CandidatePipelineStage = (typeof CANDIDATE_PIPELINE_STAGES)[number];
+
+export const CANDIDATE_PIPELINE_LABELS: Readonly<Record<CandidatePipelineStage, string>> = {
+  imported: 'Imported',
+  shared: 'Pool sent',
+  reviewing: 'Being reviewed',
+  interviewed: 'Interviewed',
+  reserved: 'Reserved',
+  placed: 'Placed',
+  unavailable: 'Unavailable',
+};
+
+export interface CandidatePipelineFacts {
+  readonly availability: AvailabilityStatus;
+  readonly poolCount: number;
+  /** Pool entries a startup has moved beyond `pending`. */
+  readonly poolsEngaged: number;
+  readonly hasCompletedInterview: boolean;
+  readonly hasActiveSelection: boolean;
+  readonly hasConfirmedSelection: boolean;
+}
+
+/**
+ * Which column a candidate sits in.
+ *
+ * Unavailability wins over everything below `reserved`: somebody who has taken
+ * another job should not sit in "Being reviewed" implying there is still a
+ * decision to make. But it does *not* override a confirmed placement, because
+ * `placed` is itself an availability state and the two would fight.
+ */
+export function deriveCandidatePipelineStage(
+  facts: CandidatePipelineFacts,
+): CandidatePipelineStage {
+  if (facts.hasConfirmedSelection) return 'placed';
+  if (facts.hasActiveSelection) return 'reserved';
+  if (!isSelectable(facts.availability)) return 'unavailable';
+  if (facts.hasCompletedInterview) return 'interviewed';
+  if (facts.poolsEngaged > 0) return 'reviewing';
+  if (facts.poolCount > 0) return 'shared';
+  return 'imported';
+}
+
+export interface CandidateHandoffVerdict {
+  readonly allowed: boolean;
+  readonly reason: string | null;
+  /** The screen or dialog where this actually happens, when it is not here. */
+  readonly handoff: { readonly label: string; readonly href: string } | null;
+}
+
+/**
+ * Whether QSTP may move a candidate card.
+ *
+ * Exactly one move is theirs: sending someone to a startup. It returns
+ * `allowed` with no reason so the screen knows to open the share dialog rather
+ * than to write anything itself — the pool is chosen there, and a drag cannot
+ * express which position it landed on.
+ */
+export function checkCandidateHandoff(
+  to: CandidatePipelineStage,
+  facts: CandidatePipelineFacts,
+): CandidateHandoffVerdict {
+  const from = deriveCandidatePipelineStage(facts);
+
+  const no = (reason: string, handoff?: { label: string; href: string }): CandidateHandoffVerdict => ({
+    allowed: false,
+    reason,
+    handoff: handoff ?? null,
+  });
+
+  if (from === to) return no('That candidate is already here.');
+
+  if (to === 'shared') {
+    if (!isSelectable(facts.availability)) {
+      return no(
+        'This candidate is not available, so sending them to a startup would waste an interview.',
+      );
+    }
+    if (from !== 'imported') {
+      return no('This candidate has already been shared with at least one startup.');
+    }
+    return { allowed: true, reason: null, handoff: null };
+  }
+
+  if (to === 'imported') {
+    return no('A candidate cannot be un-shared. The startup has already seen them.');
+  }
+
+  if (to === 'unavailable') {
+    return no('Only the candidate can say they are unavailable, from their own portal.');
+  }
+
+  if (to === 'reserved' || to === 'placed') {
+    return no(
+      'Selection is first-come-first-served and belongs to the startup, not to QSTP.',
+      { label: 'Open selection', href: '/selection' },
+    );
+  }
+
+  return no('This moves when the startup acts on the candidate, not from here.');
+}
+
+export const movePositionCardInput = z.object({
+  positionId: z.uuid(),
+  to: z.enum(POSITION_REVIEW_STAGES),
+  /** Required when sending a role back; the startup sees only this. */
+  note: z.string().trim().max(2000).nullable().default(null),
 });

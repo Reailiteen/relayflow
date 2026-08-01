@@ -1,22 +1,31 @@
 import Link from 'next/link';
+import { can } from '@relayflow/access';
 import { listStartupSummaries } from '@relayflow/logic';
-import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader, Row } from '@relayflow/ui-web';
-import { getContext } from '@/server/context';
+import { EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
+import { getActor, getContext } from '@/server/context';
+import { ViewSwitch } from '@/components/view-switch';
+import { StartupCycleBoard } from './_board';
+import { StartupTable } from './_table';
 
 export const metadata = { title: 'Startups' };
 
-const date = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-
 /**
- * Every startup in the cycle, worst first.
+ * Every startup in the cycle, as a list or as a board.
  *
- * The ordering is the design: problems, then silence, then size. A list sorted
- * alphabetically buries the two companies that actually need chasing behind
- * four that are fine.
+ * Both come from one read, because they are two shapes of the same answer and
+ * must never disagree. The list is for comparing — hours down a column, sorted
+ * by who needs chasing. The board is for locating: a tall column is a
+ * bottleneck, and you can see it from across the room.
+ *
+ * The choice lives in the URL rather than in a stored preference, so a link to
+ * "the board with everything stuck in review" is a link somebody can send.
  */
-export default async function StartupsPage() {
-  const ctx = await getContext();
+export default async function StartupsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
   const result = await listStartupSummaries(ctx, {});
 
   if (!result.ok) {
@@ -30,82 +39,82 @@ export default async function StartupsPage() {
   }
 
   const summaries = result.data;
+  const board = view === 'board';
+  // Dragging a card shares a candidate pool. A viewer gets the board to read,
+  // not a board that refuses every move it appears to offer.
+  const editable = can(actor, { capability: 'candidate:share_pool' });
+
   const funded = summaries.filter((summary) => summary.allocatedHours > 0);
-  const overdue = summaries.filter((summary) => summary.overdue);
-  const silent = summaries.filter((summary) => summary.silent);
+  const attention = summaries.filter((summary) => summary.flags.length > 0);
+  const atRisk = summaries.filter((summary) => summary.flags.includes('hours_at_risk'));
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-3 p-3">
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <p className="text-sm text-text-muted">Ordered by what needs attention, not by name.</p>
-      </header>
+    // `h-full` so the board fills the work area and each column scrolls on its
+    // own. Without it the tallest column stretches the page and the "which
+    // column is longest" read — the entire reason for a board — is lost.
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3 pb-0">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="text-sm text-text-muted">
+            {board
+              ? 'Each card is a startup. Stages are derived from what has happened, not set by hand.'
+              : 'Ordered by what needs attention, not by name.'}
+          </p>
+          <ViewSwitch
+            current={board ? 'board' : 'table'}
+            options={[
+              { value: 'table', label: 'Table', href: '/startups' },
+              { value: 'board', label: 'Board', href: '/startups?view=board' },
+            ]}
+          />
+        </header>
 
-      <MetricBar className="lg:grid-cols-4">
-        <Metric label="Startups" value={summaries.length} />
-        <Metric label="Funded" value={funded.length} hint="hold hours" />
-        <Metric
-          label="No positions"
-          value={silent.length}
-          tone={silent.length > 0 ? 'warning' : 'default'}
-        />
-        <Metric
-          label="Past deadline"
-          value={overdue.length}
-          tone={overdue.length > 0 ? 'critical' : 'default'}
-        />
-      </MetricBar>
+        <MetricBar className="lg:grid-cols-4">
+          <Metric label="Startups" value={summaries.length} />
+          <Metric label="Funded" value={funded.length} hint="hold hours" />
+          <Metric
+            label="Need attention"
+            value={attention.length}
+            tone={attention.length > 0 ? 'warning' : 'default'}
+          />
+          <Metric
+            label="Hours at risk"
+            value={atRisk.reduce((total, summary) => total + summary.allocatedHours, 0)}
+            hint="per week"
+            tone={atRisk.length > 0 ? 'critical' : 'default'}
+          />
+        </MetricBar>
+      </div>
 
-      <Panel>
-        <PanelHeader
-          title="All startups"
-          aside={<span className="text-xs tabular-nums text-text-muted">{summaries.length}</span>}
-        />
-        {summaries.length === 0 ? (
-          <EmptyState>No startups in this cycle.</EmptyState>
-        ) : (
-          summaries.map((summary) => (
-            <Row
-              key={summary.startup.id}
-              tone={
-                summary.overdue
-                  ? 'critical'
-                  : summary.silent
-                    ? 'warning'
-                    : summary.allocatedHours === 0
-                      ? 'neutral'
-                      : 'positive'
+      {summaries.length === 0 ? (
+        <div className="mx-auto w-full max-w-[1400px] p-3">
+          <Panel>
+            <EmptyState>No startups in this cycle.</EmptyState>
+          </Panel>
+        </div>
+      ) : board ? (
+        <StartupCycleBoard rows={summaries} editable={editable} />
+      ) : (
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 p-3">
+          <Panel>
+            <PanelHeader
+              title="All startups"
+              aside={
+                <span className="text-xs tabular-nums text-text-muted">{summaries.length}</span>
               }
-              kind={summary.allocatedHours === 0 ? 'Waitlisted' : `${summary.allocatedHours}h/week`}
-              subject={
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="truncate font-medium">{summary.startup.name}</span>
-                  {summary.startup.sector && (
-                    <span className="text-sm text-text-muted">{summary.startup.sector}</span>
-                  )}
-                  {summary.hasApprovedException && <Badge tone="positive">extended</Badge>}
-                  {summary.overdue && <Badge tone="critical">past deadline</Badge>}
-                  {summary.silent && <Badge tone="warning">no positions</Badge>}
-                </span>
-              }
-              detail={
-                <span className="hidden sm:inline">
-                  {summary.positionCount} role{summary.positionCount === 1 ? '' : 's'} ·{' '}
-                  {summary.selectionCount} selected · due {date(summary.selectionDeadline)}
-                </span>
-              }
-              href="/allocation"
             />
-          ))
-        )}
-      </Panel>
+            <StartupTable rows={summaries} />
+          </Panel>
 
-      <p className="px-1 text-xs text-text-muted">
-        Hour tiers are assigned on the{' '}
-        <Link href="/allocation" className="text-accent hover:underline">
-          allocation
-        </Link>{' '}
-        screen.
-      </p>
+          <p className="px-1 text-xs text-text-muted">
+            Hour tiers are assigned on the{' '}
+            <Link href="/allocation" className="text-accent hover:underline">
+              allocation
+            </Link>{' '}
+            screen.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
