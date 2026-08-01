@@ -14,7 +14,10 @@ import {
   movePositionCard,
   moveStartupCard,
   reclaimHours,
+  attachRecording,
   requestException,
+  saveInterviewFeedback,
+  scheduleInterview,
   resolveConflict,
   reviewPosition,
   sharePool,
@@ -71,6 +74,18 @@ export async function selectCandidateAction(input: unknown) {
 
 export async function submitPositionAction(input: unknown) {
   return revalidate(await action(submitPosition)(input));
+}
+
+export async function scheduleInterviewAction(input: unknown) {
+  return revalidate(await action(scheduleInterview)(input));
+}
+
+export async function attachRecordingAction(input: unknown) {
+  return revalidate(await action(attachRecording)(input));
+}
+
+export async function saveInterviewFeedbackAction(input: unknown) {
+  return revalidate(await action(saveInterviewFeedback)(input));
 }
 
 export async function requestExceptionAction(input: unknown) {

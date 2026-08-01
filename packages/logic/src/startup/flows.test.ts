@@ -6,6 +6,13 @@ import type { UseCaseContext } from '../context';
 import { submitPosition } from '../positions/submit-position';
 import { selectCandidate } from '../selection/select-candidate';
 import { requestException } from './request-exception';
+import {
+  attachRecording,
+  getStartupInterviews,
+  saveInterviewFeedback,
+  scheduleInterview,
+} from './interviews';
+import { getStartupOnboarding } from './onboarding';
 import { getStartupHome, getStartupPools, getStartupPositions } from './views';
 
 /**
@@ -271,5 +278,167 @@ describe('startup portal', () => {
         expect(result.data.startupId).toBe(ids.acme);
       }
     });
+  });
+});
+
+describe('interviews', () => {
+  it('schedules an interview for a candidate in our own pool', async () => {
+    const store = createStore();
+    const ctx = contextFor(DEV_ACTORS.startupOwner(), store);
+
+    const result = await scheduleInterview(ctx, {
+      positionId: ids.posAiDev,
+      candidateId: ids.canHassan,
+      mode: 'online',
+      scheduledFor: '2026-03-20T10:00:00.000Z',
+      durationMinutes: 45,
+      location: 'https://meet.example/abc',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.status).toBe('scheduled');
+      // Generated fields start empty; only a recording produces them.
+      expect(result.data.transcriptStatus).toBe('none');
+      expect(result.data.feedback).toBeNull();
+    }
+  });
+
+  it('refuses to interview a candidate outside our pool', async () => {
+    const result = await scheduleInterview(contextFor(DEV_ACTORS.startupOwner()), {
+      positionId: ids.posAiDev,
+      candidateId: ids.canMaryam, // in Pearl's pool, not Acme's
+      mode: 'online',
+      scheduledFor: '2026-03-20T10:00:00.000Z',
+      durationMinutes: 45,
+      location: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+  });
+
+  it('refuses to interview someone who is no longer available', async () => {
+    const store = createStore();
+    // Yusuf took another job and is in Northwind's pool.
+    const result = await scheduleInterview(contextFor(DEV_ACTORS.lateStartup(), store), {
+      positionId: ids.posDataAnalyst,
+      candidateId: ids.canYusuf,
+      mode: 'in_person',
+      scheduledFor: '2026-03-20T10:00:00.000Z',
+      durationMinutes: 45,
+      location: 'Our office',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('conflict');
+  });
+
+  it('cannot touch another startup’s interview', async () => {
+    const store = createStore();
+    // Acme's completed interview with Layla.
+    const acmeInterview = store.interviews[0];
+    const result = await saveInterviewFeedback(contextFor(DEV_ACTORS.lateStartup(), store), {
+      interviewId: acmeInterview?.id,
+      feedback: 'Trying to write on someone else’s interview.',
+      recommendation: 'advance',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+  });
+
+  it('keeps the interviewer’s verdict separate from the AI summary', async () => {
+    const store = createStore();
+    const ctx = contextFor(DEV_ACTORS.startupOwner(), store);
+    const interview = store.interviews.find((i) => i.transcriptStatus === 'failed');
+
+    // Recording produces the generated fields…
+    const recorded = await attachRecording(ctx, {
+      interviewId: interview?.id,
+      recordingUrl: 'https://recordings.example/x.m4a',
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+    expect(recorded.data.transcriptStatus).toBe('ready');
+    expect(recorded.data.aiSummary).not.toBeNull();
+    // …and does not invent a verdict.
+    expect(recorded.data.recommendation).toBe('advance'); // unchanged from seed
+
+    const saved = await saveInterviewFeedback(ctx, {
+      interviewId: interview?.id,
+      feedback: 'Strong on fundamentals. Would hire.',
+      recommendation: 'advance',
+    });
+    expect(saved.ok).toBe(true);
+    if (saved.ok) {
+      expect(saved.data.feedback).toBe('Strong on fundamentals. Would hire.');
+      // The summary survives the human verdict rather than being overwritten.
+      expect(saved.data.aiSummary).toBe(recorded.data.aiSummary);
+    }
+  });
+
+  it('surfaces candidates asked for but never booked', async () => {
+    const store = createStore();
+    const entry = store.poolEntries.find((e) => e.positionId === ids.posEmbedded);
+    if (entry) {
+      store.poolEntries[store.poolEntries.indexOf(entry)] = {
+        ...entry,
+        status: 'interview_requested',
+      };
+    }
+
+    const result = await getStartupInterviews(contextFor(DEV_ACTORS.startupOwner(), store), {});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.awaitingSchedule.map((row) => row.candidate.fullName)).toContain(
+      'Sara Nassif',
+    );
+  });
+});
+
+describe('onboarding visibility', () => {
+  it('shows progress for confirmed interns only', async () => {
+    const result = await getStartupOnboarding(contextFor(DEV_ACTORS.startupOwner()), {});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Acme has one confirmed intern (Layla) and one merely reserved (Omar).
+    expect(result.data.interns).toHaveLength(1);
+    expect(result.data.interns[0]?.candidate.fullName).toBe('Layla Ahmed');
+    expect(result.data.interns[0]?.documentsTotal).toBeGreaterThan(0);
+  });
+
+  it('never exposes a candidate’s document field values to the startup', async () => {
+    const result = await getStartupOnboarding(contextFor(DEV_ACTORS.startupOwner()), {});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const intern = result.data.interns[0];
+    expect(intern).toBeDefined();
+
+    // The whole payload must not contain the seeded ID number or IBAN, whatever
+    // shape it takes. This is the assertion that matters on this screen.
+    const serialised = JSON.stringify(intern);
+    expect(serialised).not.toContain('28912345678');
+    expect(serialised).not.toContain('QA58DOHB');
+
+    // Only the startup's own NDA comes back in full, and it carries no fields.
+    expect(intern?.nda?.kind).toBe('startup_nda');
+    expect(intern?.nda?.fields).toHaveLength(0);
+  });
+
+  it('reduces the candidate to name and email', async () => {
+    const result = await getStartupOnboarding(contextFor(DEV_ACTORS.startupOwner()), {});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.keys(result.data.interns[0]?.candidate ?? {}).sort()).toEqual([
+      'email',
+      'fullName',
+      'id',
+    ]);
+  });
+
+  it('is refused for a candidate actor', async () => {
+    const result = await getStartupOnboarding(contextFor(DEV_ACTORS.candidate()), {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
   });
 });

@@ -143,6 +143,23 @@ describe('policy', () => {
       ).toEqual({ allowed: false, reason: 'not_self' });
     });
 
+    it('is refused any startup-scoped question, even for a shared capability', () => {
+      // `document:read_own` is granted to candidates *and* startup members, but
+      // it means different things to each. Asking it with a startup scope is a
+      // startup's question, so a candidate must be turned away rather than
+      // passing the gate and failing later on a missing affiliation.
+      expect(decide(candidate(), { capability: 'document:read_own', startupId: acme })).toEqual({
+        allowed: false,
+        reason: 'wrong_portal',
+      });
+      expect(decide(candidate(), { capability: 'document:read_own', startupId: 'any' })).toEqual({
+        allowed: false,
+        reason: 'wrong_portal',
+      });
+      // Unscoped, it is their own paperwork and is allowed.
+      expect(can(candidate(), { capability: 'document:read_own' })).toBe(true);
+    });
+
     it('cannot see pools, allocations or anyone else’s data', () => {
       for (const capability of [
         'candidate:read_all',

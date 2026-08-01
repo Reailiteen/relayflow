@@ -16,6 +16,7 @@ import type {
   StartupMember,
   CandidateId,
   DocumentId,
+  InterviewId,
   PoolEntryId,
   PositionId,
   UserId,
@@ -242,12 +243,59 @@ export interface DecideExceptionCommand {
 }
 
 export interface InterviewPort {
+  findById(id: InterviewId): Promise<Result<Interview | null>>;
   listForPosition(positionId: PositionId): Promise<Result<Interview[]>>;
   listForCandidate(candidateId: CandidateId): Promise<Result<Interview[]>>;
+
+  schedule(input: ScheduleInterviewCommand): Promise<Result<Interview>>;
+
+  /**
+   * Attaches a recording and whatever transcription produced.
+   *
+   * Modelled as one write because the caller needs a single answer, but the
+   * status field is what matters: transcription is asynchronous and it fails.
+   * A real implementation moves the interview to `processing` and a worker
+   * finishes it; either way the UI reads `transcriptStatus` rather than
+   * inferring success from the presence of text.
+   */
+  attachRecording(input: AttachRecordingCommand): Promise<Result<Interview>>;
+
+  /** The interviewer's own verdict. Never written by the AI. */
+  saveFeedback(input: SaveFeedbackCommand): Promise<Result<Interview>>;
+}
+
+export interface ScheduleInterviewCommand {
+  readonly positionId: PositionId;
+  readonly candidateId: CandidateId;
+  readonly mode: Interview['mode'];
+  readonly scheduledFor: string;
+  readonly durationMinutes: number;
+  readonly location: string | null;
+  readonly interviewerId: UserId;
+  readonly createdAt: string;
+}
+
+export interface AttachRecordingCommand {
+  readonly interviewId: InterviewId;
+  readonly recordingUrl: string;
+  readonly recordedAt: string;
+}
+
+export interface SaveFeedbackCommand {
+  readonly interviewId: InterviewId;
+  readonly feedback: string;
+  readonly recommendation: Interview['recommendation'];
+  readonly savedAt: string;
 }
 
 export interface DocumentPort {
   findById(id: DocumentId): Promise<Result<CandidateDocument | null>>;
+  /**
+   * Documents a startup owns — its own NDAs, never a candidate's ID or bank
+   * details. The scoping is the point: a startup can see that its intern has
+   * finished their paperwork without seeing what is in it.
+   */
+  listForStartup(startupId: StartupId): Promise<Result<CandidateDocument[]>>;
   listForCandidate(candidateId: CandidateId): Promise<Result<CandidateDocument[]>>;
   /** Everything waiting on QSTP verification, across the cycle. */
   listAwaitingVerification(cycleId: CycleId): Promise<Result<CandidateDocument[]>>;

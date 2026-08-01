@@ -94,6 +94,14 @@ export function decide(actor: MaybeActor, query: AccessQuery): Decision {
     }
 
     case 'candidate': {
+      // A startup-scoped question has no answer for a candidate. Several
+      // capability names are shared between the two principals — `document:
+      // read_own` means "my own documents" to a candidate and "my startup's" to
+      // a member — so without this a candidate passes the capability check and
+      // is only stopped later by a missing affiliation, which reads as
+      // not_found rather than as the refusal it is.
+      if (query.startupId !== undefined) return deny('wrong_portal');
+
       if (!CANDIDATE_CAPABILITIES.includes(query.capability)) {
         return deny('missing_capability');
       }

@@ -434,11 +434,89 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     },
   };
 
+  const replaceInterview = (next: Interview) => {
+    const index = store.interviews.findIndex((i) => i.id === next.id);
+    if (index >= 0) store.interviews[index] = next;
+    else store.interviews.push(next);
+    return next;
+  };
+
   const interviews: InterviewPort = {
+    findById: (id) => Promise.resolve(ok(store.interviews.find((i) => i.id === id) ?? null)),
+
     listForPosition: (positionId) =>
       Promise.resolve(ok(store.interviews.filter((i) => i.positionId === positionId))),
+
     listForCandidate: (candidateId) =>
       Promise.resolve(ok(store.interviews.filter((i) => i.candidateId === candidateId))),
+
+    schedule: (input) =>
+      Promise.resolve(
+        ok(
+          replaceInterview({
+            id: uuid() as Interview['id'],
+            positionId: input.positionId,
+            candidateId: input.candidateId,
+            mode: input.mode,
+            status: 'scheduled',
+            scheduledFor: input.scheduledFor,
+            durationMinutes: input.durationMinutes,
+            location: input.location,
+            recordingUrl: null,
+            transcriptStatus: 'none',
+            transcript: null,
+            aiSummary: null,
+            feedback: null,
+            recommendation: null,
+            interviewerId: input.interviewerId,
+            createdAt: input.createdAt,
+            updatedAt: input.createdAt,
+          }),
+        ),
+      ),
+
+    attachRecording: (input) => {
+      const interview = store.interviews.find((i) => i.id === input.interviewId);
+      if (!interview) return Promise.resolve(err(notFound('Interview not found.')));
+
+      // Stand-in for Whisper plus a summariser. Returned synchronously here,
+      // but the status field is what the UI reads either way.
+      return Promise.resolve(
+        ok(
+          replaceInterview({
+            ...interview,
+            status: 'completed',
+            recordingUrl: input.recordingUrl,
+            transcriptStatus: 'ready',
+            transcript:
+              'Interviewer: Thanks for joining. Could you walk us through a project you are proud of?\n' +
+              'Candidate: The one I keep coming back to is a defect-detection model I shipped last summer…',
+            aiSummary:
+              'Communicates clearly and gives concrete examples. Strong practical experience with the ' +
+              'core stack; less exposure to deployment tooling. Asked thoughtful questions about ' +
+              'supervision and scope.',
+            updatedAt: input.recordedAt,
+          }),
+        ),
+      );
+    },
+
+    saveFeedback: (input) => {
+      const interview = store.interviews.find((i) => i.id === input.interviewId);
+      if (!interview) return Promise.resolve(err(notFound('Interview not found.')));
+
+      return Promise.resolve(
+        ok(
+          replaceInterview({
+            ...interview,
+            status: interview.status === 'scheduled' ? 'completed' : interview.status,
+            feedback: input.feedback,
+            recommendation: input.recommendation,
+            updatedAt: input.savedAt,
+          }),
+        ),
+      );
+    },
   };
 
   const replaceDocument = (next: CandidateDocument) => {
@@ -452,6 +530,9 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
 
     listForCandidate: (candidateId) =>
       Promise.resolve(ok(store.documents.filter((d) => d.candidateId === candidateId))),
+
+    listForStartup: (startupId) =>
+      Promise.resolve(ok(store.documents.filter((d) => d.startupId === startupId))),
 
     listAwaitingVerification: () =>
       Promise.resolve(ok(store.documents.filter((d) => d.status === 'submitted'))),

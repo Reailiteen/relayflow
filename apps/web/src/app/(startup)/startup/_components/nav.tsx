@@ -18,9 +18,9 @@ const SECTIONS = [
   { href: '/startup', label: 'Home', icon: Home, ready: true },
   { href: '/startup/positions', label: 'Positions', icon: Briefcase, ready: true },
   { href: '/startup/candidates', label: 'Candidates', icon: Users, ready: true },
-  { href: '/startup/interviews', label: 'Interviews', icon: Video, ready: false },
+  { href: '/startup/interviews', label: 'Interviews', icon: Video, ready: true },
   { href: '/startup/exception', label: 'Deadline', icon: CalendarClock, ready: true },
-  { href: '/startup/documents', label: 'Documents', icon: FileCheck2, ready: false },
+  { href: '/startup/documents', label: 'Documents', icon: FileCheck2, ready: true },
 ] as const;
 
 export function currentStartupSection(pathname: string): string {
