@@ -69,6 +69,19 @@ export const acceptOffer = defineUseCase({
     });
     if (!accepted.ok) return accepted;
 
+    await ctx.repos.activity.append({
+      cycleId: position.data.cycleId,
+      entityType: 'selection',
+      entityId: accepted.data.id,
+      action: 'accepted',
+      actorId: ctx.actor.userId,
+      actorRole: 'candidate',
+      before: { status: offer.status },
+      after: { status: accepted.data.status },
+      reason: null,
+      occurredAt: now,
+    });
+
     ctx.logger.info('offer accepted', {
       candidateId,
       selectionId: accepted.data.id,
@@ -98,10 +111,9 @@ export const respondToSelection = defineUseCase({
     if (!position.ok) return position;
     if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Selection not found.'));
     const now = ctx.clock.now().toISOString();
-    if (input.decision === 'declined') {
-      return ctx.repos.selections.decline(selection.id, ctx.actor.candidateId, now);
-    }
-    return selection.status === 'offered'
+    const updated = input.decision === 'declined'
+      ? await ctx.repos.selections.decline(selection.id, ctx.actor.candidateId, now)
+      : selection.status === 'offered'
       ? ctx.repos.selections.acceptOffer({
           selectionId: selection.id,
           candidateId: ctx.actor.candidateId,
@@ -112,5 +124,20 @@ export const respondToSelection = defineUseCase({
           candidateId: ctx.actor.candidateId,
           acceptedAt: now,
         });
+    const resolved = await updated;
+    if (!resolved.ok) return resolved;
+    await ctx.repos.activity.append({
+      cycleId: input.cycleId,
+      entityType: 'selection',
+      entityId: selection.id,
+      action: input.decision,
+      actorId: ctx.actor.userId,
+      actorRole: 'candidate',
+      before: { status: selection.status },
+      after: { status: resolved.data.status },
+      reason: null,
+      occurredAt: now,
+    });
+    return resolved;
   },
 });

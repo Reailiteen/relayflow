@@ -90,6 +90,7 @@ describe('candidate portal', () => {
     it('refuses to change availability once the candidate is placed', async () => {
       // Layla is already placed.
       const result = await confirmAvailability(contextFor(DEV_ACTORS.candidate()), {
+        cycleId: ids.cycle,
         status: 'employed',
         note: null,
       });
@@ -104,7 +105,11 @@ describe('candidate portal', () => {
       const store = createStore();
       const ctx = contextFor(impostor(), store); // Omar, who is reserved but not placed
 
-      const result = await confirmAvailability(ctx, { status: 'available', note: null });
+      const result = await confirmAvailability(ctx, {
+        cycleId: ids.cycle,
+        status: 'available',
+        note: null,
+      });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.availability).toBe('available');
@@ -114,6 +119,7 @@ describe('candidate portal', () => {
 
     it('is refused for a startup actor', async () => {
       const result = await confirmAvailability(contextFor(DEV_ACTORS.startupOwner()), {
+        cycleId: ids.cycle,
         status: 'available',
         note: null,
       });

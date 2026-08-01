@@ -1,6 +1,6 @@
 import { conflict, err, forbidden, notFound, ok } from '@relayflow/core';
 import { ANY_STARTUP, authorize } from '@relayflow/access';
-import { isSelectable, selectCandidateInput } from '@relayflow/entities';
+import { blocksOthers, effectiveDeadline, isSelectable, selectCandidateInput } from '@relayflow/entities';
 import { defineUseCase, requireActor } from '../use-case';
 
 /**
@@ -41,6 +41,9 @@ export const selectCandidate = defineUseCase({
     if (!positionResult.ok) return positionResult;
     const position = positionResult.data;
     if (!position) return err(notFound('Position not found.'));
+    if (input.cycleId && position.cycleId !== input.cycleId) {
+      return err(notFound('Position not found.'));
+    }
 
     // Step two: re-authorize now that we know whose position this is. Without
     // it, `selection:create` would let any startup select against any position
@@ -50,6 +53,10 @@ export const selectCandidate = defineUseCase({
       startupId: position.startupId,
     });
     if (!scoped.ok) return scoped;
+
+    if (!['approved', 'locked'].includes(position.status)) {
+      return err(conflict('Only approved positions can receive selections.'));
+    }
 
     const poolResult = await ctx.repos.candidates.listPool(position.id);
     if (!poolResult.ok) return poolResult;
@@ -78,6 +85,25 @@ export const selectCandidate = defineUseCase({
     if (!cycle) return err(notFound('There is no active cycle.'));
 
     const now = ctx.clock.now().toISOString();
+    const exceptions = await ctx.repos.exceptions.listForStartup(position.cycleId, position.startupId);
+    if (!exceptions.ok) return exceptions;
+    const deadline = effectiveDeadline(
+      cycle.deadlines.candidateSelection,
+      exceptions.data,
+      'candidate_selection',
+    );
+    if (input.cycleId && now > deadline) {
+      return err(conflict('The candidate selection deadline has passed.'));
+    }
+
+    const cycleSelections = await ctx.repos.selections.listForCycle(position.cycleId);
+    if (!cycleSelections.ok) return cycleSelections;
+    const heldSeats = cycleSelections.data.filter(
+      (selection) => selection.positionId === position.id && blocksOthers(selection.status),
+    ).length;
+    if (heldSeats >= position.internCount) {
+      return err(conflict('The position has no open seats.'));
+    }
 
     // Under candidate-choice this is an expression of interest, not a claim.
     // Nobody is blocked, several startups may be here at once, and the
@@ -96,6 +122,19 @@ export const selectCandidate = defineUseCase({
         offeredAt: now,
       });
       if (!offered.ok) return offered;
+
+      await ctx.repos.activity.append({
+        cycleId: position.cycleId,
+        entityType: 'selection',
+        entityId: offered.data.id,
+        action: 'offered',
+        actorId: actor.data.userId,
+        actorRole: 'owner',
+        before: null,
+        after: { positionId: position.id, candidateId: input.candidateId },
+        reason: null,
+        occurredAt: now,
+      });
 
       ctx.logger.info('candidate offered', {
         positionId: position.id,
@@ -161,6 +200,19 @@ export const selectCandidate = defineUseCase({
       positionId: position.id,
       startupId: position.startupId,
       candidateId: input.candidateId,
+    });
+
+    await ctx.repos.activity.append({
+      cycleId: position.cycleId,
+      entityType: 'selection',
+      entityId: reserved.data.id,
+      action: 'reserved',
+      actorId: actor.data.userId,
+      actorRole: 'owner',
+      before: null,
+      after: { positionId: position.id, candidateId: input.candidateId },
+      reason: null,
+      occurredAt: now,
     });
 
     return ok(reserved.data);

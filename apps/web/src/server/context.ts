@@ -1,8 +1,9 @@
 import 'server-only';
 import { cache } from 'react';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { systemClock } from '@relayflow/core';
-import { ANONYMOUS, type MaybeActor } from '@relayflow/access';
+import { ANONYMOUS, isCandidate, type MaybeActor } from '@relayflow/access';
 import {
   FIXTURE_SCENARIOS,
   createFixtureRepositories,
@@ -91,3 +92,25 @@ export const getActiveCycleName = cache(async (): Promise<string | null> => {
   const result = await ctx.repos.cycles.findActive();
   return result.ok ? (result.data?.name ?? null) : null;
 });
+
+/** Sends legacy stage URLs to the cycle-explicit canonical workspace. */
+export async function redirectToActiveCycleWorkspace(
+  portal: 'qstp' | 'startup' | 'candidate',
+  workspace: 'allocation' | 'positions' | 'selection' | 'recovery' | 'placements',
+): Promise<void> {
+  const ctx = await getContext();
+  let selected: { readonly id: string } | null = null;
+  if (portal === 'candidate' && isCandidate(ctx.actor)) {
+    const candidate = await ctx.repos.candidates.findById(ctx.actor.candidateId);
+    if (candidate.ok && candidate.data) {
+      const cycle = await ctx.repos.cycles.findById(candidate.data.cycleId);
+      selected = cycle.ok ? cycle.data : null;
+    }
+  } else {
+    const active = await ctx.repos.cycles.findActive();
+    selected = active.ok ? active.data : null;
+  }
+  if (!selected) return;
+  const prefix = portal === 'qstp' ? '' : `/${portal}`;
+  redirect(`${prefix}/cycles/${selected.id}/${workspace}`);
+}

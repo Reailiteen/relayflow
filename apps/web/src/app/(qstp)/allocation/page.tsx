@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { getAllocationWorkspace } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { AllocationTable } from './_table';
 
 export const metadata = { title: 'Allocation' };
@@ -17,6 +18,7 @@ export const metadata = { title: 'Allocation' };
  * change, since "can I afford this?" is the question being asked on every row.
  */
 export default async function AllocationPage() {
+  await redirectToActiveCycleWorkspace('qstp', 'allocation');
   const actor = await getActor();
   const ctx = await getContext();
   const result = await getAllocationWorkspace(ctx, {});

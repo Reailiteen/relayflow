@@ -163,6 +163,7 @@ async function sendPools(
     if (matches.length === 0) continue;
 
     const result = await sharePool(ctx, {
+      cycleId: cycle.id,
       positionId: position.id,
       candidateIds: matches.map((row) => row.candidate.id),
     });

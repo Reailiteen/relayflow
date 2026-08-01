@@ -96,6 +96,13 @@ export interface ParticipationPort {
 export interface PrioritizationPort {
   run(cycleId: CycleId, createdBy: UserId, createdAt: string): Promise<Result<PrioritizationRun>>;
   listForCycle(cycleId: CycleId): Promise<Result<PrioritizationRun[]>>;
+  adjust(
+    runId: PrioritizationRun['id'],
+    startupId: StartupId,
+    proposedHours: 0 | 20 | 30 | 40 | 60,
+    adjustedBy: UserId,
+    adjustedAt: string,
+  ): Promise<Result<PrioritizationRun>>;
   confirm(runId: PrioritizationRun['id'], confirmedAt: string): Promise<Result<PrioritizationRun>>;
 }
 
@@ -113,6 +120,7 @@ export interface TaskPort {
   assign(input: Omit<TaskAssignment, 'id' | 'createdAt' | 'updatedAt'> & { occurredAt: string }): Promise<Result<TaskAssignment>>;
   submit(assignmentId: TaskAssignment['id'], candidateId: CandidateId, fileName: string | null, linkUrl: string | null, occurredAt: string): Promise<Result<TaskAssignment>>;
   review(assignmentId: TaskAssignment['id'], reviewerId: UserId, notes: string, occurredAt: string): Promise<Result<TaskAssignment>>;
+  withdraw(assignmentId: TaskAssignment['id'], occurredAt: string): Promise<Result<TaskAssignment>>;
 }
 
 export interface PlacementPort {
@@ -129,11 +137,17 @@ export interface PlacementPort {
 export interface RequirementPort {
   listTemplates(cycleId: CycleId): Promise<Result<DocumentRequirementTemplate[]>>;
   saveTemplate(input: Omit<DocumentRequirementTemplate, 'id' | 'createdAt' | 'updatedAt'> & { occurredAt: string }): Promise<Result<DocumentRequirementTemplate>>;
+  updateTemplate(
+    id: DocumentRequirementTemplate['id'],
+    input: Pick<DocumentRequirementTemplate, 'title' | 'owner' | 'required' | 'active'> & {
+      occurredAt: string;
+    },
+  ): Promise<Result<DocumentRequirementTemplate>>;
   snapshotForPlacement(placementId: Placement['id'], occurredAt: string): Promise<Result<PlacementRequirement[]>>;
   listForPlacement(placementId: Placement['id']): Promise<Result<PlacementRequirement[]>>;
   amend(input: Omit<PlacementRequirement, 'id' | 'createdAt' | 'updatedAt'> & { reason: string; occurredAt: string }): Promise<Result<PlacementRequirement>>;
   submit(input: { requirementId: PlacementRequirement['id']; fileName: string; submittedBy: UserId; extractedFields: RequirementSubmission['extractedFields']; occurredAt: string }): Promise<Result<RequirementSubmission>>;
-  decide(input: { requirementId: PlacementRequirement['id']; decision: 'approved' | 'correction_requested' | 'rejected' | 'waived'; reason: string | null; occurredAt: string }): Promise<Result<PlacementRequirement>>;
+  decide(input: { requirementId: PlacementRequirement['id']; decision: 'approved' | 'correction_requested' | 'rejected' | 'expired' | 'waived'; reason: string | null; occurredAt: string }): Promise<Result<PlacementRequirement>>;
   listSubmissions(requirementId: PlacementRequirement['id']): Promise<Result<RequirementSubmission[]>>;
   sign(input: Omit<PlacementSignature, 'id'>): Promise<Result<PlacementSignature>>;
   listSignatures(placementId: Placement['id']): Promise<Result<PlacementSignature[]>>;
@@ -147,6 +161,7 @@ export interface RecoveryPort {
   listRounds(cycleId: CycleId): Promise<Result<RedistributionRound[]>>;
   invite(roundId: RedistributionRound['id'], startupId: StartupId, proposedHours: number, occurredAt: string): Promise<Result<RedistributionRound>>;
   respond(roundId: RedistributionRound['id'], startupId: StartupId, response: 'accepted' | 'declined', occurredAt: string): Promise<Result<RedistributionRound>>;
+  expireInvitations(roundId: RedistributionRound['id'], occurredAt: string): Promise<Result<RedistributionRound>>;
   closeRound(roundId: RedistributionRound['id'], occurredAt: string): Promise<Result<RedistributionRound>>;
 }
 
@@ -203,6 +218,7 @@ export interface PositionPort {
   listForCycle(cycleId: CycleId): Promise<Result<Position[]>>;
   listForStartup(cycleId: CycleId, startupId: StartupId): Promise<Result<Position[]>>;
   create(input: CreatePositionCommand): Promise<Result<Position>>;
+  updateDetails(id: PositionId, input: CreatePositionCommand): Promise<Result<Position>>;
   updateStatus(
     id: PositionId,
     status: Position['status'],
@@ -223,6 +239,7 @@ export interface CreatePositionCommand {
   readonly durationWeeks: number;
   readonly supervisorName: string | null;
   readonly redistributionRoundId: RedistributionRoundId | null;
+  readonly status?: 'draft' | 'submitted' | undefined;
 }
 
 export interface CandidatePort {
@@ -423,6 +440,8 @@ export interface InterviewPort {
   listForCandidate(candidateId: CandidateId): Promise<Result<Interview[]>>;
 
   schedule(input: ScheduleInterviewCommand): Promise<Result<Interview>>;
+  request(input: RequestInterviewCommand): Promise<Result<Interview>>;
+  transition(input: TransitionInterviewCommand): Promise<Result<Interview>>;
 
   /**
    * Attaches a recording and whatever transcription produced.
@@ -437,6 +456,23 @@ export interface InterviewPort {
 
   /** The interviewer's own verdict. Never written by the AI. */
   saveFeedback(input: SaveFeedbackCommand): Promise<Result<Interview>>;
+}
+
+export interface RequestInterviewCommand {
+  readonly positionId: PositionId;
+  readonly candidateId: CandidateId;
+  readonly mode: Interview['mode'];
+  readonly interviewerId: UserId;
+  readonly createdAt: string;
+}
+
+export interface TransitionInterviewCommand {
+  readonly interviewId: InterviewId;
+  readonly status: Interview['status'];
+  readonly scheduledFor?: string | null | undefined;
+  readonly durationMinutes?: number | null | undefined;
+  readonly location?: string | null | undefined;
+  readonly occurredAt: string;
 }
 
 export interface ScheduleInterviewCommand {

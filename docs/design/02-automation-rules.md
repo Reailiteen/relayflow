@@ -1,4 +1,4 @@
-# 02 — Automation rules: triggers, audiences, channels
+# 02A — Reminder engine: triggers, audiences, channels
 
 ## The change
 
@@ -7,28 +7,36 @@ follow-ups". Today RelayFlow knows Desert Bloom has not submitted positions and
 does nothing — a human must open the dashboard and notice. This is the largest
 gap between what exists and what was asked for.
 
-**Build a rules engine, not a notification system.** The automations include
-non-communication ones (reclaiming hours, expiring exceptions), so the thing to
-model is `trigger → audience → effect`, where *notify* is one effect among
-several. Building "notifications" first and bolting actions on later produces two
-half-systems.
+This document covers reminders only: in-app, email, Slack and push. It owns how
+RelayFlow detects something worth communicating, determines who should hear it,
+records the notification and delivers external copies.
+
+Automations that change programme state — reclaiming hours, expiring
+exceptions, withdrawing offers and similar actions — are intentionally separate.
+See [02B — Action automations](./02-action-automations.md).
 
 ## Shape
 
 ```ts
-interface AutomationRule {
+interface ReminderRule {
   id: RuleId;
-  name: string;                 // shown to QSTP, e.g. "Chase silent startups"
+  key: string;                   // stable, code-owned identifier
+  name: string;                  // e.g. "Chase silent startups"
   enabled: boolean;
-  cycleId: CycleId | null;      // null = applies to every cycle
+  cycleId: CycleId | null;       // null = applies to every cycle
 
   trigger: Trigger;
   audience: Audience;
-  effects: readonly Effect[];
+  notification: {
+    template: TemplateId;
+    channels: ChannelPolicy;
+    category: NotificationCategory;
+    mandatory: boolean;          // recipients cannot mute it
+    urgent: boolean;             // bypasses digest
+  };
 
-  dedupe: { key: string; cooldownHours: number };
-  escalation: EscalationStep[] | null;
-  mandatory: boolean;           // recipients cannot mute it
+  cooldownHours: number | null;
+  escalation: readonly EscalationStep[];
 }
 ```
 
@@ -36,15 +44,48 @@ interface AutomationRule {
 
 ```ts
 type Trigger =
-  | { kind: 'schedule'; anchor: DeadlineName; offsetHours: number }  // −72h before selection closes
-  | { kind: 'state'; predicate: PredicateName }                      // becomes true
-  | { kind: 'event'; event: DomainEvent }                            // selection.reserved
+  | { kind: 'schedule'; anchor: DeadlineName; offsetHours: number }
+  | { kind: 'state'; predicate: PredicateName }
+  | { kind: 'event'; event: DomainEventName };
 ```
 
-`schedule` covers reminders. `state` covers "is something wrong right now".
-`event` covers reacting to an action the moment it happens.
+`schedule` covers reminders relative to deadlines. `state` covers "is something
+wrong right now?" `event` covers communicating immediately after an action.
 
-### Audience — the three scopes, as you described them
+Predicates should be a closed, typed catalog rather than arbitrary strings.
+`StartupCycleFacts` and `startupCycleFlags` in
+`packages/entities/src/board/board.ts` are existing ingredients: "hours at risk"
+must call the same derivation as the board. Time-based predicates such as
+"pending for 24 hours" will need additional pure evaluators beside them.
+
+### Subject and audience are different
+
+The subject is what caused the reminder; the audience is who receives it.
+
+- Positions not submitted: subject = startup; audience = that startup's members.
+- Candidate conflict: subject = candidate; audience = QSTP operations.
+- Exception pending: subject = exception request; audience = QSTP operations.
+
+Evaluation produces a concrete occurrence before recipients are resolved:
+
+```ts
+interface ReminderOccurrence {
+  id: OccurrenceId;
+  ruleId: RuleId;
+  cycleId: CycleId;
+  subject: {
+    kind: 'startup' | 'candidate' | 'exception' | 'document' | 'selection';
+    id: string;
+  };
+  occurrenceKey: string;
+  detectedAt: string;
+  resolvedAt: string | null;
+  context: Readonly<Record<string, unknown>>;
+}
+```
+
+The occurrence's context is the safe, typed data needed to render the message;
+templates do not perform fresh domain queries.
 
 ```ts
 type Audience = {
@@ -53,234 +94,159 @@ type Audience = {
     | { kind: 'all' }
     | { kind: 'matching'; predicate: PredicateName }
     | { kind: 'explicit'; ids: readonly string[] };
-  // For QSTP, optionally narrow by role: only the programme manager, say.
   roles?: readonly string[];
 };
 ```
 
-**The predicate vocabulary already exists and is tested.** `StartupCycleFacts`
-and `startupCycleFlags` in `packages/entities/src/board/board.ts` were built for
-the board. "Notify every startup whose hours are at risk" should evaluate
-`flags.includes('hours_at_risk')` — the same function the board calls.
+Audience resolution needs a recipient-directory port. The current repositories
+can list startup members but cannot generally list QSTP staff or user delivery
+details. Candidates may have no `userId`, so email may be possible when in-app
+and push are not.
 
-If the automation and the board ever disagree about who is at risk, one of them
-is lying to somebody. Sharing the implementation makes that impossible rather
-than unlikely.
+## Channels
 
-### Effects
-
-RelayFlow supports three execution policies. The policy belongs to each effect,
-not to the whole rule: one occurrence may send its warning automatically and
-then wait for a programme manager to approve the consequential action.
-
-```ts
-type ExecutionPolicy =
-  | { kind: 'automatic' }
-  | { kind: 'approval_required'; approverRoles: readonly string[] }
-  | { kind: 'manual_only' };
-
-type Effect =
-  | {
-      kind: 'notify';
-      execution: { kind: 'automatic' };
-      template: TemplateId;
-      channels: ChannelPolicy;
-    }
-  | { kind: 'reclaim_hours'; execution: ExecutionPolicy }
-  | { kind: 'expire_exception'; execution: ExecutionPolicy }
-  | { kind: 'escalate'; execution: { kind: 'automatic' }; to: Audience }
-  | { kind: 'flag_for_review'; execution: { kind: 'automatic' } };
-```
-
-The initial boundary is deliberate: RelayFlow may autonomously communicate,
-organise, retry and escalate; it may not autonomously change funding,
-eligibility or candidate placement. Those effects begin as `approval_required`
-or `manual_only` and can be moved individually after QSTP has approved the
-policy and the audit and recovery paths exist.
-
-An `approval_required` effect creates a pending action for an authorised user.
-Approval executes the existing use-case as that user, preserving its capability
-check and precondition re-check. `reclaimHours` in
-`packages/logic/src/qstp/decisions.ts`, for example, remains programme-manager
-work. A `manual_only` effect can identify and link to the appropriate workflow,
-but the engine never executes it.
-
-Automatic domain effects will eventually need a distinct system principal,
-rather than impersonating a user. Enabling one requires an audit record naming
-the rule and occurrence, an idempotent executor, visible failure handling and a
-documented recovery or reversal path.
-
-### Channels
-
-In-app, email, Slack, push. **No WhatsApp.** **No quiet hours** (decided).
-
-One rule matters more than the rest:
+In-app, email, Slack, push. **No WhatsApp. No quiet hours** (decided).
 
 > **In-app is the record. External channels are copies.**
 
-The notification row is always written. Each external channel is then attempted
-and gets its own delivery status. A bounced email loses a copy, never the
-notification — and QSTP gets a delivery audit for free, which they will want the
-first time a startup claims they were never told.
+An authenticated recipient always gets a notification row. Every external
+channel is attempted separately and has its own delivery status. A bounced email
+loses a copy, never the notification.
 
 ```ts
 interface ChannelPolicy {
-  required: readonly Channel[];   // always attempted
-  preferred: readonly Channel[];  // subject to recipient preference
+  required: readonly Channel[];
+  preferred: readonly Channel[]; // subject to recipient preference
 }
 
-interface Delivery {
-  notificationId; channel; status: 'pending'|'sent'|'failed'|'bounced';
-  attempts: number; lastError: string | null; sentAt: string | null;
+interface Notification {
+  id: NotificationId;
+  occurrenceId: OccurrenceId;
+  recipientId: UserId;
+  title: string;                 // rendered snapshot for the audit trail
+  body: string;
+  actionHref: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+interface DeliveryAttempt {
+  notificationId: NotificationId;
+  channel: Channel;
+  status: 'pending' | 'sent' | 'failed' | 'bounced';
+  attempt: number;
+  lastError: string | null;
+  attemptedAt: string | null;
 }
 ```
 
+Rendered content is stored on the notification. Keeping only a template ID
+would let a later template edit rewrite what the audit trail claims was sent.
+
 ## The factors that actually bite
 
-In rough order of pain saved:
+### Idempotency and cooldown are separate
 
-**Dedupe key + cooldown.** Without it a state-triggered rule fires on every
-evaluation and sends forty emails. This is the one that ruins a launch. The key
-should be composed of `(ruleId, subjectId, cycleId)` so "chase Desert Bloom about
-positions" is one thing that can be on cooldown.
+A unique `occurrenceKey` makes evaluation safe to retry. Cooldown controls how
+often a still-relevant reminder may communicate; it is not the concurrency
+guarantee.
 
-**Escalation ladder.** A property of the rule, not three separate rules:
+- Event: `(ruleId, eventId)`
+- Schedule: `(ruleId, subjectId, scheduledInstant)`
+- State episode: `(ruleId, subjectId, stateBecameTrueAt)`
+- Repeating reminder: `(ruleId, subjectId, windowNumber)`
+
+The production database must enforce occurrence uniqueness. The fixture adapter
+can simulate it for development.
+
+### Escalation ladder
+
+Escalation is part of the reminder rule rather than several independent rules:
 
 ```ts
 interface EscalationStep {
   afterHours: number;
-  audience: Audience;      // widen: startup → startup + QSTP → QSTP alone
+  audience: Audience;
   template: TemplateId;
 }
 ```
 
-Escalation stops when the underlying state resolves. That means the engine needs
-to re-evaluate the predicate before each step, not just fire on a timer.
+Before every step, the engine re-evaluates the underlying condition. If it has
+resolved, the occurrence closes and no further reminder is created.
 
-**Mandatory vs mutable.** Deadline and legal notices cannot be muted; nudges can.
-If everything is opt-out-able people mute the important ones, and if nothing is
-they filter you entirely.
+### Mandatory versus mutable
 
-**Digest window.** Batch non-urgent notifications per recipient into one message.
-Three separate "candidate reviewed" emails trains someone to ignore you. Urgent
-ones bypass the digest.
+Deadline and legal notices cannot be muted; nudges can. Preferences are per
+user, category and channel rather than per rule, or the settings screen becomes
+unusable.
 
-**Delivery retry.** Exponential backoff, capped. A failed send that silently
-never retries is worse than not sending.
+### Digest
 
-**Preferences.** Per user, per category, per channel. Categories rather than
-per-rule, or the settings screen becomes unusable.
+Non-urgent notifications are batched per recipient. Urgent notifications bypass
+the digest. A fixed daily digest is the simplest initial policy.
 
-**Approval state.** Consequential effects need their own lifecycle, separate
-from notification delivery:
+### Delivery retry
 
-```ts
-type EffectExecutionStatus =
-  | 'pending_approval'
-  | 'approved'
-  | 'executing'
-  | 'completed'
-  | 'declined'
-  | 'cancelled'
-  | 'failed';
-```
-
-Before an approved effect executes, its underlying state and use-case
-preconditions are checked again. If the condition has resolved in the meantime,
-the execution is recorded as `cancelled`, not treated as a failure and not
-retried.
+External delivery retries use capped exponential backoff. Exhausted retries are
+visible to QSTP operations; they never delete or invalidate the in-app record.
 
 ## Evaluation
 
-Two paths:
+Two paths feed the same occurrence store:
 
-- **Scheduled sweep** — a cron-ish job evaluating `schedule` and `state` triggers.
-  Hackathon version: evaluate on page load, which is enough to demo and needs no
-  infrastructure.
-- **Event dispatch** — `event` triggers fire inline after the use-case commits.
+- **Scheduled sweep** evaluates schedule and state triggers. The fixture-backed
+  demonstration may invoke it on page load; production needs a durable runner.
+- **Event dispatch** evaluates event triggers after a use-case commits. A
+  production version needs a durable event/outbox boundary so a successful
+  domain write cannot lose its reminder.
 
-Both must be idempotent, which is what the dedupe key buys.
+Both paths are idempotent through `occurrenceKey`.
 
-## Decisions
+## Authoring boundary
 
-### All three execution policies are supported
+Start with a code-owned rule catalog plus safe QSTP configuration:
 
-- **Automatic** is for low-risk, repeatable actions such as notifications,
-  delivery retries, escalation and review flags.
-- **Approval required** is for actions RelayFlow can prepare and execute, but
-  only after an authorised person approves that occurrence. Reclaiming funded
-  hours starts here.
-- **Manual only** is for high-judgement actions where RelayFlow may surface the
-  case but must not execute it. Overriding a candidate's choice starts here.
+- enable or disable a rule;
+- edit timing offsets and escalation delays;
+- edit recipient roles and channel policy;
+- choose whether a reminder is urgent or part of a digest.
 
-Execution policy is assigned per effect and may be tightened safely at any
-time. Relaxing a policy from `manual_only` to `approval_required`, or from
-`approval_required` to `automatic`, is a policy change: it requires an explicit
-QSTP decision and cannot happen implicitly through a deployment or default.
-
-The users retain distinct responsibilities:
-
-- Programme managers approve funding and other consequential programme actions.
-- Operations manage routine exceptions and delivery failures within their
-  existing capabilities.
-- Startups and candidates receive consistent warnings and remain protected from
-  automatic high-impact changes during the initial phases.
-- Viewers and auditors can inspect the rule, occurrence, approval and execution
-  trail but cannot advance it.
+Do not initially expose arbitrary predicates, templates or rule composition.
+Global rules act as defaults; a cycle-specific configuration overrides a global
+rule by stable `key` rather than causing both to fire.
 
 ## Open questions
 
-1. ⚠️ **Who authors rules?** Three options with very different builds: hardcoded
-   set with on/off toggles (smallest); QSTP manager composes them in a UI
-   (largest); hardcoded set plus editable timings and audiences (middle, probably
-   right).
-
-2. ⚠️ **Are rules per-cycle or global?** The `cycleId: null` field above assumes
-   both are possible. Confirm that is wanted rather than just permitted.
-
-3. **Do candidates get Slack?** Presumably not — they are students, not staff.
-   Email, push and in-app only?
-
-4. **Do startups get Slack?** The brief mentions Slack for "internal alerts and
-   startup notifications", which reads like both. Confirm.
-
-5. **Digest frequency.** Daily is the obvious default. Configurable per user, or
-   fixed?
-
-6. **How long are delivery records kept?** They are an audit trail; they are also
-   personal data with a retention question attached.
-
-7. **Escalation targets — fixed or configurable?** "Escalate to the programme
-   manager" is probably always right, but a named person may be wanted.
-
-8. **Is there a preview / test send?** Strongly recommended before anything goes
-   to real startups, and cheap while the channels are still simulated.
-
-9. **Who can change an effect's execution policy?** This should probably be a
-   programme-manager capability, with tightening always allowed and relaxation
-   requiring an explicit confirmation and audit entry.
+1. **Do candidates get Slack?** Presumably not — email, push and in-app only.
+2. **Do startups get Slack?** The brief can be read as including them, but their
+   workspace/account model does not yet exist.
+3. **Digest frequency.** Fixed daily initially, or configurable per user?
+4. **How long are notifications and delivery attempts retained?** They are an
+   audit trail and also personal data.
+5. **Escalation targets.** Roles are safer defaults; are named people needed?
+6. **Preview/test send.** Strongly recommended before external delivery is
+   enabled.
 
 ## Suggested scope
 
-You asked for all of it rather than a cut-down version, so:
+**Phase 1 — engine and in-app.** Pure trigger evaluation, typed predicates,
+audience resolution, occurrence idempotency, fixture ports, notification centre,
+unread count and mark-as-read.
 
-**Phase 1 — engine and in-app.** Rule model in entities as pure functions,
-trigger evaluation, audience resolution reusing the board predicates, dedupe,
-in-app notification centre with a bell and unread count, delivery record.
+**Phase 2 — channels.** Email, Slack and push adapters behind one delivery port.
+Simulate them in fixtures exactly as OCR and transcription are today.
 
-**Phase 2 — channels.** Email, Slack, push as adapters behind one `deliver()`
-port. Simulated in fixtures exactly as OCR and transcription are today, so the
-whole thing demos without credentials.
+**Phase 3 — escalation, digest and preferences.** Add the durable runner and
+outbox when Supabase becomes the real adapter.
 
-**Phase 3 — escalation, digest, preferences, approval-required and manual-only
-effects. Automatic domain effects remain disabled until their individual audit,
-failure and recovery requirements are met.**
+The first vertical slice is **Positions not submitted**: evaluate it 72 hours
+before the submission deadline, notify matching startup members in-app, and
+prove repeated evaluation creates only one occurrence and one notification per
+recipient.
 
-## Rules worth shipping with
+## Reminders worth shipping with
 
-A starter set, all derivable from state that already exists:
-
-| Rule | Trigger | Audience | Effect |
+| Reminder | Trigger | Audience | Delivery behavior |
 | --- | --- | --- | --- |
 | Positions not submitted | −72h before submission deadline | startups matching `silent` | notify, escalate after 48h |
 | Selection deadline approaching | −72h before selection closes | startups with no selections | notify |

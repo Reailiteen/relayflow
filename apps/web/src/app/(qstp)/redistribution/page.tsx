@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { getQstpDashboard, getRedistributionPlan } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ReclaimButton } from './_reclaim';
 import { GrantButton } from './_grant';
 
@@ -18,6 +19,7 @@ const number = (n: number) => new Intl.NumberFormat('en-GB').format(n);
  * no "reclaim all".
  */
 export default async function RedistributionPage() {
+  await redirectToActiveCycleWorkspace('qstp', 'recovery');
   const actor = await getActor();
   const ctx = await getContext();
   const result = await getRedistributionPlan(ctx, {});

@@ -3,6 +3,7 @@ import { CalendarClock } from 'lucide-react';
 import { getStartupInterviews } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { InterviewWorkspace } from './_workspace';
 
 export const metadata = { title: 'Interviews' };
@@ -17,6 +18,7 @@ export const metadata = { title: 'Interviews' };
  * unless something names it.
  */
 export default async function StartupInterviewsPage() {
+  await redirectToActiveCycleWorkspace('startup', 'selection');
   const ctx = await getContext();
   const result = await getStartupInterviews(ctx, {});
 

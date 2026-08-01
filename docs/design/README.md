@@ -1,8 +1,8 @@
 # Design docs
 
-Five features agreed but not yet built. Each doc is written to be opened cold in
-a fresh session: it states what exists today, what is proposed, and — in a
-clearly marked section — the questions still to answer.
+Five features agreed but not yet built, documented across six files. Each doc is
+written to be opened cold in a fresh session: it states what exists today, what
+is proposed, and — in a clearly marked section — the questions still to answer.
 
 Read the open questions first. Several change the data model, and answering them
 after the backend exists costs a migration.
@@ -10,7 +10,8 @@ after the backend exists costs a migration.
 | Doc                                             | What it is                                       | Blocks the backend?                     |
 | ----------------------------------------------- | ------------------------------------------------ | --------------------------------------- |
 | [01 — Selection models](./01-selection-models.md) | Candidate choice alongside first-come-first-served | **Yes** — changes the selection table    |
-| [02 — Automation rules](./02-automation-rules.md) | Triggers, audiences, channels, escalation         | New tables, but additive                |
+| [02A — Reminder engine](./02-automation-rules.md) | In-app, email, Slack, push, escalation             | New tables, but additive                |
+| [02B — Action automations](./02-action-automations.md) | Approvals, domain effects, recovery             | New tables, but additive                |
 | [03 — Cycle setup](./03-cycle-setup.md)           | Flow 1, with stage gates                          | **Yes** — concurrent cycles is unanswered |
 | [04 — Candidate tasks](./04-candidate-tasks.md)   | Startups setting work for candidates              | New tables, additive                    |
 | [05 — Prioritisation](./05-prioritisation.md)     | KPI intake and automatic tiering                  | New tables, additive                    |
@@ -24,9 +25,10 @@ question — whether two cycles can run at once — that touches every query.
 **04 next.** It is the most self-contained, demos well, and closes a real gap in
 the original brief.
 
-**05 then 02.** Prioritisation is the first stage of a cycle so it is more
-visible; automation is the larger build and benefits from having more state to
-watch.
+**05 then 02A, followed by 02B.** Prioritisation is the first stage of a cycle so
+it is more visible. The reminder engine benefits from having more state to watch,
+and action automation should build on its occurrence model after reminders are
+proven.
 
 ## Ground rules that apply to all five
 

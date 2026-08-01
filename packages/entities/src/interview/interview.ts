@@ -26,6 +26,7 @@ export type InterviewMode = (typeof INTERVIEW_MODES)[number];
 
 export const INTERVIEW_STATUSES = [
   'requested', // startup asked; candidate has not confirmed
+  'confirmed', // candidate agreed; startup can now schedule the slot
   'scheduled',
   'completed',
   'cancelled',

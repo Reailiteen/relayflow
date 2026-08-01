@@ -33,5 +33,7 @@ supabase/.temp/
 # misc
 .DS_Store
 coverage/
+test-results/
+playwright-report/
 *.log
 .vercel

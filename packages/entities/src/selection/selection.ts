@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { defineEntity, auditColumns } from '../shared/entity';
 import {
   candidateId,
+  cycleId,
   positionId,
   selectionId,
   startupId,
@@ -234,6 +235,7 @@ export function resolve(mode: SelectionMode, claims: readonly Selection[]): Sele
 }
 
 export const selectCandidateInput = z.object({
+  cycleId: cycleId.optional(),
   positionId,
   candidateId,
 });

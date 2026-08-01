@@ -2,6 +2,7 @@ import { CircleCheck } from 'lucide-react';
 import { getCandidateOffers } from '@relayflow/logic';
 import { EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { OfferChoice, type OfferCard } from './_offers';
 
 export const metadata = { title: 'Offers' };
@@ -23,6 +24,7 @@ const day = (iso: string) =>
  * interest, because without it there is nothing to choose between.
  */
 export default async function CandidateOffersPage() {
+  await redirectToActiveCycleWorkspace('candidate', 'selection');
   const ctx = await getContext();
   const result = await getCandidateOffers(ctx, {});
 

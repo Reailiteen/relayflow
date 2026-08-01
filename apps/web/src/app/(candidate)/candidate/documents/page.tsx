@@ -1,6 +1,7 @@
 import { getCandidateDocuments } from '@relayflow/logic';
 import { EmptyState, Panel } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { DocumentCard } from './_document';
 
 export const metadata = { title: 'Documents' };
@@ -12,6 +13,7 @@ export const metadata = { title: 'Documents' };
  * to scan a list to find the one that matters.
  */
 export default async function CandidateDocumentsPage() {
+  await redirectToActiveCycleWorkspace('candidate', 'placements');
   const ctx = await getContext();
   const result = await getCandidateDocuments(ctx, {});
 

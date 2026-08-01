@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { getVerificationQueue } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { VerificationCard } from './_item';
 
 export const metadata = { title: 'Documents' };
@@ -14,6 +15,7 @@ export const metadata = { title: 'Documents' };
  * findable without a search.
  */
 export default async function QstpDocumentsPage() {
+  await redirectToActiveCycleWorkspace('qstp', 'placements');
   const actor = await getActor();
   const ctx = await getContext();
   const result = await getVerificationQueue(ctx, {});

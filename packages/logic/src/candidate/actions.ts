@@ -38,6 +38,9 @@ export const confirmAvailability = defineUseCase({
     const current = await ctx.repos.candidates.findById(candidateId);
     if (!current.ok) return current;
     if (!current.data) return err(notFound('Candidate record not found.'));
+    if (current.data.cycleId !== input.cycleId) {
+      return err(notFound('Candidate record not found.'));
+    }
 
     // Someone already placed cannot quietly mark themselves available again —
     // that would leave a startup holding a reservation on a person the system
@@ -56,6 +59,33 @@ export const confirmAvailability = defineUseCase({
       ctx.clock.now().toISOString(),
     );
     if (!updated.ok) return updated;
+
+    if (input.status !== 'available') {
+      const pool = await ctx.repos.candidates.listPoolForCycle(input.cycleId);
+      if (!pool.ok) return pool;
+      for (const row of pool.data) {
+        if (row.candidate.id !== candidateId || row.entry.status === 'withdrawn') continue;
+        const withdrawn = await ctx.repos.candidates.updatePoolEntry({
+          poolEntryId: row.entry.id,
+          status: 'withdrawn',
+          reviewedAt: ctx.clock.now().toISOString(),
+        });
+        if (!withdrawn.ok) return withdrawn;
+      }
+    }
+
+    await ctx.repos.activity.append({
+      cycleId: input.cycleId,
+      entityType: 'candidate',
+      entityId: candidateId,
+      action: 'availability_confirmed',
+      actorId: ctx.actor.userId,
+      actorRole: 'candidate',
+      before: { availability: current.data.availability },
+      after: { availability: input.status },
+      reason: input.note,
+      occurredAt: ctx.clock.now().toISOString(),
+    });
 
     ctx.logger.info('availability confirmed', { candidateId, status: input.status });
 

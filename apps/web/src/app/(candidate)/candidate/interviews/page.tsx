@@ -2,6 +2,7 @@ import { CalendarClock, MapPin, Video } from 'lucide-react';
 import { getCandidateInterviews } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 
 export const metadata = { title: 'Interviews' };
 
@@ -17,6 +18,7 @@ const when = (iso: string) =>
 
 const TONE = {
   requested: 'warning',
+  confirmed: 'info',
   scheduled: 'info',
   completed: 'positive',
   cancelled: 'neutral',
@@ -31,6 +33,7 @@ const TONE = {
  * showing a candidate "second choice behind Layla" would be indefensible.
  */
 export default async function CandidateInterviewsPage() {
+  await redirectToActiveCycleWorkspace('candidate', 'selection');
   const ctx = await getContext();
   const result = await getCandidateInterviews(ctx, {});
 

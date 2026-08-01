@@ -1,6 +1,7 @@
 import { getStartupExceptions } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ExceptionForm } from './_form';
 
 export const metadata = { title: 'Deadline' };
@@ -21,6 +22,7 @@ const TONE = {
 } as const;
 
 export default async function StartupExceptionPage() {
+  await redirectToActiveCycleWorkspace('startup', 'positions');
   const ctx = await getContext();
   const result = await getStartupExceptions(ctx, {});
 

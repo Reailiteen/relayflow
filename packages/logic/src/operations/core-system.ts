@@ -8,20 +8,28 @@ import {
   candidateId,
   cycleId,
   evaluateStageGate,
+  exceptionId,
+  effectiveDeadline,
   fallbackCaseId,
+  interviewId,
   participationId,
   placementId,
   placementRequirementId,
+  placementReadinessBlockers,
   positionId,
   prioritizationRunId,
   recoveryCaseId,
+  requirementTemplateId,
   redistributionRoundId,
   selectionId,
   selectionConflictId,
   stageIndex,
+  submitPositionInput,
   startupId,
   taskAssignmentId,
   taskTemplateId,
+  reservesHours,
+  totalWeeklyHours,
   type ActivityActorRole,
   type ActivityEvent,
   type Allocation,
@@ -32,7 +40,9 @@ import {
   type CycleId,
   type CycleParticipation,
   type DocumentRequirementTemplate,
+  type ExceptionRequest,
   type JsonValue,
+  type Interview,
   type Placement,
   type PlacementRequirement,
   type PlacementSignature,
@@ -48,6 +58,7 @@ import {
   type SelectionConflict,
   type StageGateCheck,
   type TaskAssignment,
+  type TaskTemplate,
 } from '@relayflow/entities';
 import { AUTHENTICATED, defineUseCase, requireActor } from '../use-case';
 
@@ -67,10 +78,22 @@ const cycleSetup = z
       offerWindow: z.iso.datetime({ offset: true }).nullable(),
     }),
   })
-  .refine((row) => row.startsOn < row.endsOn, { message: 'Cycle end must follow its start.', path: ['endsOn'] })
-  .refine((row) => row.deadlines.positionSubmission < row.deadlines.candidateSelection, { message: 'Position submission must close before selection.', path: ['deadlines', 'candidateSelection'] })
-  .refine((row) => row.deadlines.candidateSelection < row.deadlines.documentSubmission, { message: 'Documents must be due after selection.', path: ['deadlines', 'documentSubmission'] })
-  .refine((row) => row.selectionMode !== 'candidate_choice' || row.deadlines.offerWindow !== null, { message: 'Candidate-choice cycles need an offer window.', path: ['deadlines', 'offerWindow'] });
+  .refine((row) => row.startsOn < row.endsOn, {
+    message: 'Cycle end must follow its start.',
+    path: ['endsOn'],
+  })
+  .refine((row) => row.deadlines.positionSubmission < row.deadlines.candidateSelection, {
+    message: 'Position submission must close before selection.',
+    path: ['deadlines', 'candidateSelection'],
+  })
+  .refine((row) => row.deadlines.candidateSelection < row.deadlines.documentSubmission, {
+    message: 'Documents must be due after selection.',
+    path: ['deadlines', 'documentSubmission'],
+  })
+  .refine((row) => row.selectionMode !== 'candidate_choice' || row.deadlines.offerWindow !== null, {
+    message: 'Candidate-choice cycles need an offer window.',
+    path: ['deadlines', 'offerWindow'],
+  });
 
 function actorRole(ctx: Parameters<typeof requireActor>[0]): ActivityActorRole {
   const actor = ctx.actor;
@@ -153,7 +176,8 @@ export const listCycles = defineUseCase({
       rows.push({
         cycle,
         participants: participation.data.length,
-        acknowledged: participation.data.filter((row) => row.allocationAcknowledgedAt !== null).length,
+        acknowledged: participation.data.filter((row) => row.allocationAcknowledgedAt !== null)
+          .length,
       });
     }
     return ok(rows);
@@ -221,17 +245,24 @@ export interface CycleWorkspace {
   readonly poolEntries: readonly { readonly entry: PoolEntry; readonly candidate: Candidate }[];
   readonly selections: readonly Selection[];
   readonly conflicts: readonly SelectionConflict[];
+  readonly interviews: readonly Interview[];
+  readonly exceptions: readonly ExceptionRequest[];
   readonly positions: readonly Position[];
   readonly placements: readonly Placement[];
   readonly requirements: readonly PlacementRequirement[];
   readonly requirementTemplates: readonly DocumentRequirementTemplate[];
   readonly requirementSubmissions: readonly RequirementSubmission[];
   readonly signatures: readonly PlacementSignature[];
+  readonly placementReadiness: readonly {
+    readonly placementId: Placement['id'];
+    readonly blockers: readonly string[];
+  }[];
   readonly recoveryCases: readonly RecoveryCase[];
   readonly rounds: readonly RedistributionRound[];
   readonly activity: readonly ActivityEvent[];
   readonly fallbackCases: readonly CandidateChoiceFallback[];
   readonly tasks: readonly TaskAssignment[];
+  readonly taskTemplates: readonly TaskTemplate[];
   readonly stageGateChecks: readonly StageGateCheck[];
   readonly permissions: {
     readonly manageCycle: boolean;
@@ -241,6 +272,8 @@ export interface CycleWorkspace {
     readonly submitPositions: boolean;
     readonly reviewPositions: boolean;
     readonly assessTasks: boolean;
+    readonly selectCandidates: boolean;
+    readonly manageCandidates: boolean;
     readonly resolveSelection: boolean;
     readonly runRedistribution: boolean;
     readonly verifyDocuments: boolean;
@@ -263,21 +296,76 @@ function cycleStageGateChecks(
   placements: readonly Placement[],
 ): StageGateCheck[] {
   if (cycle.stage === 'draft') {
-    return [{ key: 'participants', label: 'At least one startup accepted', severity: 'blocking', passed: participation.some((row) => row.status === 'accepted') }];
+    return [
+      {
+        key: 'participants',
+        label: 'At least one startup accepted',
+        severity: 'blocking',
+        passed: participation.some((row) => row.status === 'accepted'),
+      },
+    ];
   }
   if (cycle.stage === 'allocation') {
     return [
-      { key: 'budget', label: 'Published allocations fit budget', severity: 'blocking', passed: allocations.reduce((sum, row) => sum + row.weeklyHours, 0) <= cycle.fundedWeeklyHours },
-      { key: 'acknowledged', label: 'Funded startups acknowledged', severity: 'warning', passed: participation.filter((row) => allocations.some((allocation) => allocation.startupId === row.startupId && allocation.weeklyHours > 0)).every((row) => row.allocationAcknowledgedAt !== null) },
+      {
+        key: 'budget',
+        label: 'Published allocations fit budget',
+        severity: 'blocking',
+        passed:
+          allocations.reduce((sum, row) => sum + row.weeklyHours, 0) <= cycle.fundedWeeklyHours,
+      },
+      {
+        key: 'acknowledged',
+        label: 'Funded startups acknowledged',
+        severity: 'warning',
+        passed: participation
+          .filter((row) =>
+            allocations.some(
+              (allocation) => allocation.startupId === row.startupId && allocation.weeklyHours > 0,
+            ),
+          )
+          .every((row) => row.allocationAcknowledgedAt !== null),
+      },
     ];
   }
   if (cycle.stage === 'positions') {
-    return [{ key: 'approved_positions', label: 'Every funded startup has an approved position', severity: 'warning', passed: allocations.filter((row) => row.weeklyHours > 0).every((allocation) => positions.some((position) => position.startupId === allocation.startupId && ['approved', 'locked', 'filled'].includes(position.status))) }];
+    return [
+      {
+        key: 'approved_positions',
+        label: 'Every funded startup has an approved position',
+        severity: 'warning',
+        passed: allocations
+          .filter((row) => row.weeklyHours > 0)
+          .every((allocation) =>
+            positions.some(
+              (position) =>
+                position.startupId === allocation.startupId &&
+                ['approved', 'locked', 'filled'].includes(position.status),
+            ),
+          ),
+      },
+    ];
   }
   if (cycle.stage === 'selection') {
-    return [{ key: 'resolved_selection', label: 'Selection work has been reviewed', severity: 'warning', passed: placements.length > 0 }];
+    return [
+      {
+        key: 'resolved_selection',
+        label: 'Selection work has been reviewed',
+        severity: 'warning',
+        passed: placements.length > 0,
+      },
+    ];
   }
-  return [{ key: 'placements_terminal', label: 'Placements are ready, onboarded, or cancelled', severity: 'blocking', passed: placements.every((row) => ['ready_to_start', 'onboarded', 'cancelled'].includes(row.status)) }];
+  return [
+    {
+      key: 'placements_terminal',
+      label: 'Placements are ready, onboarded, or cancelled',
+      severity: 'blocking',
+      passed: placements.every((row) =>
+        ['ready_to_start', 'onboarded', 'cancelled'].includes(row.status),
+      ),
+    },
+  ];
 }
 
 /** Cycle-scoped operational read model used by all three canonical portals. */
@@ -294,27 +382,47 @@ export const getCycleWorkspace = defineUseCase({
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
 
-    const [cycles, participation, allocations, allocationHistory, prioritizationRuns, startups, candidates, poolEntries, selections, conflicts, positions, placements, requirementTemplates, recoveries, rounds, activity, fallbacks, tasks] =
-      await Promise.all([
-        ctx.repos.cycles.list(),
-        ctx.repos.participation.listForCycle(cycle.id),
-        ctx.repos.allocations.listForCycle(cycle.id),
-        ctx.repos.allocations.listHistoryForCycle(cycle.id),
-        ctx.repos.prioritization.listForCycle(cycle.id),
-        ctx.repos.startups.listForCycle(cycle.id),
-        ctx.repos.candidates.listForCycle(cycle.id),
-        ctx.repos.candidates.listPoolForCycle(cycle.id),
-        ctx.repos.selections.listForCycle(cycle.id),
-        ctx.repos.conflicts.listForCycle(cycle.id),
-        ctx.repos.positions.listForCycle(cycle.id),
-        ctx.repos.placements.listForCycle(cycle.id),
-        ctx.repos.requirements.listTemplates(cycle.id),
-        ctx.repos.recovery.listForCycle(cycle.id),
-        ctx.repos.recovery.listRounds(cycle.id),
-        ctx.repos.activity.listForCycle(cycle.id),
-        ctx.repos.fallbacks.listForCycle(cycle.id),
-        ctx.repos.tasks.listForCycle(cycle.id),
-      ]);
+    const [
+      cycles,
+      participation,
+      allocations,
+      allocationHistory,
+      prioritizationRuns,
+      startups,
+      candidates,
+      poolEntries,
+      selections,
+      conflicts,
+      exceptions,
+      positions,
+      placements,
+      requirementTemplates,
+      recoveries,
+      rounds,
+      activity,
+      fallbacks,
+      tasks,
+    ] = await Promise.all([
+      ctx.repos.cycles.list(),
+      ctx.repos.participation.listForCycle(cycle.id),
+      ctx.repos.allocations.listForCycle(cycle.id),
+      ctx.repos.allocations.listHistoryForCycle(cycle.id),
+      ctx.repos.prioritization.listForCycle(cycle.id),
+      ctx.repos.startups.listForCycle(cycle.id),
+      ctx.repos.candidates.listForCycle(cycle.id),
+      ctx.repos.candidates.listPoolForCycle(cycle.id),
+      ctx.repos.selections.listForCycle(cycle.id),
+      ctx.repos.conflicts.listForCycle(cycle.id),
+      ctx.repos.exceptions.listForCycle(cycle.id),
+      ctx.repos.positions.listForCycle(cycle.id),
+      ctx.repos.placements.listForCycle(cycle.id),
+      ctx.repos.requirements.listTemplates(cycle.id),
+      ctx.repos.recovery.listForCycle(cycle.id),
+      ctx.repos.recovery.listRounds(cycle.id),
+      ctx.repos.activity.listForCycle(cycle.id),
+      ctx.repos.fallbacks.listForCycle(cycle.id),
+      ctx.repos.tasks.listForCycle(cycle.id),
+    ]);
     if (!cycles.ok) return err(cycles.error);
     if (!participation.ok) return err(participation.error);
     if (!allocations.ok) return err(allocations.error);
@@ -325,6 +433,7 @@ export const getCycleWorkspace = defineUseCase({
     if (!poolEntries.ok) return err(poolEntries.error);
     if (!selections.ok) return err(selections.error);
     if (!conflicts.ok) return err(conflicts.error);
+    if (!exceptions.ok) return err(exceptions.error);
     if (!positions.ok) return err(positions.error);
     if (!placements.ok) return err(placements.error);
     if (!requirementTemplates.ok) return err(requirementTemplates.error);
@@ -338,7 +447,9 @@ export const getCycleWorkspace = defineUseCase({
     let candidateId: CandidateId | null = null;
     if (isStartup(actor.data)) {
       allowedStartupIds = new Set(
-        actor.data.affiliations.filter((row) => row.status === 'active').map((row) => row.startupId),
+        actor.data.affiliations
+          .filter((row) => row.status === 'active')
+          .map((row) => row.startupId),
       );
       if (!participation.data.some((row) => allowedStartupIds?.has(row.startupId))) {
         return err(notFound('Cycle not found.'));
@@ -347,7 +458,8 @@ export const getCycleWorkspace = defineUseCase({
       candidateId = actor.data.candidateId;
       const candidate = await ctx.repos.candidates.findById(candidateId);
       if (!candidate.ok) return candidate;
-      if (!candidate.data || candidate.data.cycleId !== cycle.id) return err(notFound('Cycle not found.'));
+      if (!candidate.data || candidate.data.cycleId !== cycle.id)
+        return err(notFound('Cycle not found.'));
     }
 
     const visibleParticipation = isQstp(actor.data)
@@ -377,20 +489,41 @@ export const getCycleWorkspace = defineUseCase({
       : allowedStartupIds
         ? candidates.data.filter((candidate) =>
             poolEntries.data.some(
-              (row) => row.candidate.id === candidate.id && visiblePositions.some((position) => position.id === row.entry.positionId),
+              (row) =>
+                row.candidate.id === candidate.id &&
+                visiblePositions.some((position) => position.id === row.entry.positionId),
             ),
           )
         : candidates.data.filter((candidate) => candidate.id === candidateId);
     const visiblePoolEntries = isQstp(actor.data)
       ? poolEntries.data
       : allowedStartupIds
-        ? poolEntries.data.filter((row) => visiblePositions.some((position) => position.id === row.entry.positionId))
+        ? poolEntries.data.filter((row) =>
+            visiblePositions.some((position) => position.id === row.entry.positionId),
+          )
         : poolEntries.data.filter((row) => row.candidate.id === candidateId);
     const visibleSelections = isQstp(actor.data)
       ? selections.data
       : allowedStartupIds
         ? selections.data.filter((row) => allowedStartupIds?.has(row.startupId))
         : selections.data.filter((row) => row.candidateId === candidateId);
+    const cycleInterviews: Interview[] = [];
+    for (const candidate of candidates.data) {
+      const interviewResult = await ctx.repos.interviews.listForCandidate(candidate.id);
+      if (!interviewResult.ok) return err(interviewResult.error);
+      cycleInterviews.push(
+        ...interviewResult.data.filter((interview) =>
+          positions.data.some((position) => position.id === interview.positionId),
+        ),
+      );
+    }
+    const visibleInterviews = isQstp(actor.data)
+      ? cycleInterviews
+      : allowedStartupIds
+        ? cycleInterviews.filter((interview) =>
+            visiblePositions.some((position) => position.id === interview.positionId),
+          )
+        : cycleInterviews.filter((interview) => interview.candidateId === candidateId);
     const visiblePlacements = isQstp(actor.data)
       ? placements.data
       : allowedStartupIds
@@ -401,7 +534,13 @@ export const getCycleWorkspace = defineUseCase({
       : allowedStartupIds
         ? recoveries.data.filter((row) => allowedStartupIds?.has(row.startupId))
         : [];
-    const visibleRounds = isCandidate(actor.data) ? [] : rounds.data;
+    const visibleRounds = isCandidate(actor.data)
+      ? []
+      : allowedStartupIds
+        ? rounds.data.filter((round) =>
+            round.invitations.some((invite) => allowedStartupIds?.has(invite.startupId)),
+          )
+        : rounds.data;
     const visibleActivity = isQstp(actor.data)
       ? activity.data
       : activity.data.filter((row) => {
@@ -419,6 +558,12 @@ export const getCycleWorkspace = defineUseCase({
     const requirements: PlacementRequirement[] = [];
     const requirementSubmissions: RequirementSubmission[] = [];
     const signatures: PlacementSignature[] = [];
+    const taskTemplates: TaskTemplate[] = [];
+    for (const position of visiblePositions) {
+      const templates = await ctx.repos.tasks.listTemplates(position.id);
+      if (!templates.ok) return err(templates.error);
+      taskTemplates.push(...templates.data);
+    }
     for (const placement of visiblePlacements) {
       const result = await ctx.repos.requirements.listForPlacement(placement.id);
       if (!result.ok) return err(result.error);
@@ -455,19 +600,55 @@ export const getCycleWorkspace = defineUseCase({
       prioritizationRuns: isQstp(actor.data) ? prioritizationRuns.data : [],
       startups: isQstp(actor.data)
         ? startups.data
-        : startups.data.filter((row) => allowedStartupIds?.has(row.id) || visiblePlacements.some((placement) => placement.startupId === row.id)),
+        : startups.data.filter(
+            (row) =>
+              allowedStartupIds?.has(row.id) ||
+              visiblePlacements.some((placement) => placement.startupId === row.id),
+          ),
       candidates: visibleCandidates,
       poolEntries: visiblePoolEntries,
       selections: visibleSelections,
       conflicts: isQstp(actor.data) ? conflicts.data : [],
+      interviews: visibleInterviews,
+      exceptions: isQstp(actor.data)
+        ? exceptions.data
+        : allowedStartupIds
+          ? exceptions.data.filter((row) => allowedStartupIds?.has(row.startupId))
+          : [],
       positions: visiblePositions,
       placements: visiblePlacements,
       requirements,
       requirementTemplates: isCandidate(actor.data)
         ? []
-        : requirementTemplates.data.filter((row) => isQstp(actor.data) || (row.owner === 'startup' && visiblePositions.some((position) => position.id === row.positionId))),
+        : requirementTemplates.data.filter(
+            (row) =>
+              isQstp(actor.data) ||
+              (row.owner === 'startup' &&
+                visiblePositions.some((position) => position.id === row.positionId)),
+          ),
       requirementSubmissions,
       signatures,
+      placementReadiness: visiblePlacements.map((placement) => ({
+        placementId: placement.id,
+        blockers: placementReadinessBlockers({
+          active: placement.status === 'confirmed',
+          requirements: requirements.filter((row) => row.placementId === placement.id),
+          signatures: signatures.filter((row) => row.placementId === placement.id),
+          candidateReady: placement.candidateReadyAt !== null,
+          startupReady: placement.startupReadyAt !== null,
+          detailsFinal: placement.detailsFinalizedAt !== null,
+          qstpApproved: placement.qstpApprovedAt !== null,
+          unresolvedConflict: conflicts.data.some(
+            (row) => row.candidateId === placement.candidateId && row.status === 'open',
+          ),
+          unresolvedException: exceptions.data.some(
+            (row) =>
+              row.startupId === placement.startupId &&
+              row.cycleId === placement.cycleId &&
+              row.status === 'pending',
+          ),
+        }),
+      })),
       recoveryCases: visibleRecovery,
       rounds: visibleRounds,
       activity: visibleActivity,
@@ -481,17 +662,39 @@ export const getCycleWorkspace = defineUseCase({
               visiblePositions.some((position) => position.id === task.positionId),
             )
           : tasks.data.filter((task) => task.candidateId === candidateId),
+      taskTemplates,
       stageGateChecks: isQstp(actor.data)
-        ? cycleStageGateChecks(cycle, participation.data, allocations.data, positions.data, placements.data)
+        ? cycleStageGateChecks(
+            cycle,
+            participation.data,
+            allocations.data,
+            positions.data,
+            placements.data,
+          )
         : [],
       permissions: {
         manageCycle: authorize(actor.data, { capability: 'cycle:advance_stage' }).ok,
         manageParticipation: authorize(actor.data, { capability: 'startup:manage' }).ok,
         manageAllocation: authorize(actor.data, { capability: 'allocation:decide' }).ok,
-        acknowledgeAllocation: allowedStartupIds !== null && [...allowedStartupIds].some((id) => authorize(actor.data, { capability: 'allocation:acknowledge', startupId: id }).ok),
-        submitPositions: allowedStartupIds !== null && [...allowedStartupIds].some((id) => authorize(actor.data, { capability: 'position:submit', startupId: id }).ok),
+        acknowledgeAllocation:
+          allowedStartupIds !== null &&
+          [...allowedStartupIds].some(
+            (id) =>
+              authorize(actor.data, { capability: 'allocation:acknowledge', startupId: id }).ok,
+          ),
+        submitPositions:
+          allowedStartupIds !== null &&
+          [...allowedStartupIds].some(
+            (id) => authorize(actor.data, { capability: 'position:submit', startupId: id }).ok,
+          ),
         reviewPositions: authorize(actor.data, { capability: 'position:review' }).ok,
         assessTasks: authorize(actor.data, { capability: 'task:assess' }).ok,
+        selectCandidates:
+          allowedStartupIds !== null &&
+          [...allowedStartupIds].some(
+            (id) => authorize(actor.data, { capability: 'selection:create', startupId: id }).ok,
+          ),
+        manageCandidates: authorize(actor.data, { capability: 'candidate:import' }).ok,
         resolveSelection: authorize(actor.data, { capability: 'selection:resolve_conflict' }).ok,
         runRedistribution: authorize(actor.data, { capability: 'redistribution:run' }).ok,
         verifyDocuments: authorize(actor.data, { capability: 'document:verify' }).ok,
@@ -552,7 +755,9 @@ export const saveParticipation = defineUseCase({
       entityType: 'participation',
       entityId: saved.data.id,
       action: before.data ? 'updated' : 'created',
-      before: before.data ? { status: before.data.status, requestedTotalHours: before.data.requestedTotalHours } : null,
+      before: before.data
+        ? { status: before.data.status, requestedTotalHours: before.data.requestedTotalHours }
+        : null,
       after: { status: saved.data.status, requestedTotalHours: saved.data.requestedTotalHours },
       occurredAt,
     });
@@ -565,12 +770,16 @@ export const acknowledgeAllocation = defineUseCase({
   input: cycleInput,
   authorize: { capability: 'allocation:acknowledge' as const, startupId: ANY_STARTUP },
   execute: async (ctx, input) => {
-    if (!isStartup(ctx.actor)) return err(forbidden('Only a startup can acknowledge an allocation.'));
+    if (!isStartup(ctx.actor))
+      return err(forbidden('Only a startup can acknowledge an allocation.'));
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const startup = ctx.actor.affiliations.find((row) => row.status === 'active');
     if (!startup) return err(notFound('Cycle not found.'));
-    const scoped = authorize(ctx.actor, { capability: 'allocation:acknowledge', startupId: startup.startupId });
+    const scoped = authorize(ctx.actor, {
+      capability: 'allocation:acknowledge',
+      startupId: startup.startupId,
+    });
     if (!scoped.ok) return scoped;
     return ctx.repos.participation.acknowledge(
       input.cycleId,
@@ -578,6 +787,51 @@ export const acknowledgeAllocation = defineUseCase({
       actor.data.userId,
       ctx.clock.now().toISOString(),
     );
+  },
+});
+
+export const requestCycleException = defineUseCase({
+  name: 'exception.requestForCycle',
+  input: z.object({ cycleId, kind: z.enum(['position_submission', 'candidate_selection']), reason: z.string().trim().min(10).max(2000), requestedDeadline: z.iso.datetime({ offset: true }) }),
+  authorize: { capability: 'exception:request' as const, startupId: ANY_STARTUP },
+  execute: async (ctx, input) => {
+    if (!isStartup(ctx.actor)) return err(notFound('Cycle not found.'));
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const startup = ctx.actor.affiliations.find((row) => row.status === 'active');
+    if (!startup) return err(notFound('Cycle not found.'));
+    const cycle = await resolveCycle(ctx, input.cycleId);
+    if (!cycle.ok) return cycle;
+    const existing = await ctx.repos.exceptions.listForStartup(input.cycleId, startup.startupId);
+    if (!existing.ok) return existing;
+    if (existing.data.some((row) => row.kind === input.kind && ['pending', 'approved'].includes(row.status))) return err(conflict('An open or approved exception already exists for this deadline.'));
+    const current = input.kind === 'position_submission' ? cycle.data.deadlines.positionSubmission : cycle.data.deadlines.candidateSelection;
+    if (ctx.clock.now().toISOString() >= current) return err(conflict('Extension requests must be submitted before the effective deadline.'));
+    if (input.requestedDeadline <= current) return err(validation('The requested deadline must be later than the current deadline.'));
+    const requested = await ctx.repos.exceptions.request({ cycleId: input.cycleId, startupId: startup.startupId, kind: input.kind, reason: input.reason, requestedDeadline: input.requestedDeadline, requestedBy: actor.data.userId });
+    if (!requested.ok) return requested;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'exception', entityId: requested.data.id, action: 'requested', before: null, after: { kind: input.kind, requestedDeadline: input.requestedDeadline }, reason: input.reason, occurredAt: requested.data.createdAt });
+    return requested;
+  },
+});
+
+export const decideCycleException = defineUseCase({
+  name: 'exception.decideForCycle',
+  input: z.object({ cycleId, exceptionId, decision: z.enum(['approved', 'rejected']), grantedDeadline: z.iso.datetime({ offset: true }).nullable().default(null), decisionNote: z.string().trim().max(2000).nullable().default(null) }).refine((row) => row.decision === 'rejected' || row.grantedDeadline !== null, { message: 'Approving requires a granted deadline.', path: ['grantedDeadline'] }),
+  authorize: { capability: 'exception:decide' as const },
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const rows = await ctx.repos.exceptions.listForCycle(input.cycleId);
+    if (!rows.ok) return rows;
+    const request = rows.data.find((row) => row.id === input.exceptionId);
+    if (!request) return err(notFound('Exception request not found.'));
+    if (request.status !== 'pending') return err(conflict('This exception request is no longer pending.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const decided = await ctx.repos.exceptions.decide({ exceptionId: input.exceptionId, decision: input.decision, grantedDeadline: input.grantedDeadline, decisionNote: input.decisionNote, decidedBy: actor.data.userId, decidedAt: occurredAt });
+    if (!decided.ok) return decided;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'exception', entityId: input.exceptionId, action: input.decision, before: { status: request.status }, after: { status: decided.data.status, grantedDeadline: decided.data.grantedDeadline }, reason: input.decisionNote, occurredAt });
+    return decided;
   },
 });
 
@@ -590,8 +844,66 @@ export const runPrioritization = defineUseCase({
     if (!actor.ok) return actor;
     const cycle = await resolveCycle(ctx, input.cycleId);
     if (!cycle.ok) return cycle;
-    if (cycle.data.stage !== 'allocation') return err(validation('Prioritization only runs during allocation.'));
-    return ctx.repos.prioritization.run(input.cycleId, actor.data.userId, ctx.clock.now().toISOString());
+    if (cycle.data.stage !== 'allocation')
+      return err(validation('Prioritization only runs during allocation.'));
+    return ctx.repos.prioritization.run(
+      input.cycleId,
+      actor.data.userId,
+      ctx.clock.now().toISOString(),
+    );
+  },
+});
+
+export const adjustPrioritization = defineUseCase({
+  name: 'allocation.adjustPrioritization',
+  input: z.object({
+    cycleId,
+    runId: prioritizationRunId,
+    startupId,
+    proposedHours: z.union([
+      z.literal(0),
+      z.literal(20),
+      z.literal(30),
+      z.literal(40),
+      z.literal(60),
+    ]),
+    reason: z.string().trim().min(10).max(2000),
+  }),
+  authorize: { capability: 'allocation:decide' as const },
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const cycle = await resolveCycle(ctx, input.cycleId);
+    if (!cycle.ok) return cycle;
+    if (cycle.data.stage !== 'allocation') {
+      return err(conflict('Allocation proposals can only be adjusted during allocation.'));
+    }
+    const runs = await ctx.repos.prioritization.listForCycle(input.cycleId);
+    if (!runs.ok) return runs;
+    const source = runs.data.find((row) => row.id === input.runId && row.status === 'draft');
+    if (!source) return err(notFound('Draft prioritization run not found.'));
+    const before = source.proposals.find((row) => row.startupId === input.startupId);
+    if (!before) return err(notFound('Proposal not found.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const adjusted = await ctx.repos.prioritization.adjust(
+      source.id,
+      input.startupId,
+      input.proposedHours,
+      actor.data.userId,
+      occurredAt,
+    );
+    if (!adjusted.ok) return adjusted;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'prioritization_run',
+      entityId: adjusted.data.id,
+      action: 'proposal_adjusted',
+      before: { runId: source.id, startupId: input.startupId, hours: before.proposedHours },
+      after: { runId: adjusted.data.id, startupId: input.startupId, hours: input.proposedHours },
+      reason: input.reason,
+      occurredAt,
+    });
+    return adjusted;
   },
 });
 
@@ -608,7 +920,8 @@ export const publishAllocations = defineUseCase({
     if (!runs.ok) return runs;
     const run = runs.data.find((row) => row.id === input.runId);
     if (!run || run.status !== 'draft') return err(notFound('Draft prioritization run not found.'));
-    if (run.proposedHours > cycle.data.fundedWeeklyHours) return err(validation('Proposals exceed the cycle budget.'));
+    if (run.proposedHours > cycle.data.fundedWeeklyHours)
+      return err(validation('Proposals exceed the cycle budget.'));
     const occurredAt = ctx.clock.now().toISOString();
     for (const proposal of run.proposals) {
       const participation = await ctx.repos.participation.find(input.cycleId, proposal.startupId);
@@ -723,12 +1036,17 @@ export const transitionPosition = defineUseCase({
   execute: async (ctx, input) => {
     const position = await ctx.repos.positions.findById(input.positionId);
     if (!position.ok) return position;
-    if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Position not found.'));
+    if (!position.data || position.data.cycleId !== input.cycleId)
+      return err(notFound('Position not found.'));
     const qstp = isQstp(ctx.actor);
     if (!qstp) {
-      const scoped = authorize(ctx.actor, { capability: 'position:submit', startupId: position.data.startupId });
+      const scoped = authorize(ctx.actor, {
+        capability: 'position:submit',
+        startupId: position.data.startupId,
+      });
       if (!scoped.ok) return err(notFound('Position not found.'));
-      if (!['submitted', 'resubmitted', 'withdrawn'].includes(input.to)) return err(forbidden('Only QSTP can review or lock a position.'));
+      if (!['submitted', 'resubmitted', 'withdrawn'].includes(input.to))
+        return err(forbidden('Only QSTP can review or lock a position.'));
     }
     if (position.data.status === 'locked' && input.to === 'approved' && !input.reason?.trim()) {
       return err(validation('Reopening a locked position requires a reason.'));
@@ -736,7 +1054,11 @@ export const transitionPosition = defineUseCase({
     if (input.to === 'changes_requested' && !input.reason?.trim()) {
       return err(validation('Explain what needs changing.'));
     }
-    const updated = await ctx.repos.positions.updateStatus(input.positionId, input.to, input.reason);
+    const updated = await ctx.repos.positions.updateStatus(
+      input.positionId,
+      input.to,
+      input.reason,
+    );
     if (!updated.ok) return updated;
     const occurredAt = ctx.clock.now().toISOString();
     await event(ctx, {
@@ -753,53 +1075,158 @@ export const transitionPosition = defineUseCase({
   },
 });
 
+export const savePosition = defineUseCase({
+  name: 'position.save',
+  input: submitPositionInput.extend({
+    cycleId,
+    positionId: positionId.nullable().default(null),
+    redistributionRoundId: redistributionRoundId.nullable().default(null),
+    action: z.enum(['draft', 'submit']),
+  }),
+  authorize: { capability: 'position:submit' as const, startupId: ANY_STARTUP },
+  execute: async (ctx, input) => {
+    if (!isStartup(ctx.actor)) return err(forbidden('Only a startup can manage positions.'));
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const startup = ctx.actor.affiliations.find((row) => row.status === 'active');
+    if (!startup) return err(forbidden('You are not an active member of a startup.'));
+    const cycle = await resolveCycle(ctx, input.cycleId);
+    if (!cycle.ok) return cycle;
+    if (cycle.data.stage !== 'positions' && !(cycle.data.stage === 'completion' && input.redistributionRoundId)) {
+      return err(forbidden('Position collection is not open for this cycle.'));
+    }
+    const [allocation, participation, exceptions, positions] = await Promise.all([
+      ctx.repos.allocations.findForStartup(input.cycleId, startup.startupId),
+      ctx.repos.participation.find(input.cycleId, startup.startupId),
+      ctx.repos.exceptions.listForStartup(input.cycleId, startup.startupId),
+      ctx.repos.positions.listForStartup(input.cycleId, startup.startupId),
+    ]);
+    if (!allocation.ok) return allocation;
+    if (!participation.ok) return participation;
+    if (!exceptions.ok) return exceptions;
+    if (!positions.ok) return positions;
+    if (!allocation.data || allocation.data.status !== 'confirmed' || allocation.data.weeklyHours === 0) return err(forbidden('This startup has no funded allocation for position collection.'));
+    if (participation.data?.status !== 'accepted' || !participation.data.allocationAcknowledgedAt) return err(forbidden('Acknowledge the published allocation before creating positions.'));
+    const existing = input.positionId ? positions.data.find((row) => row.id === input.positionId) : null;
+    if (input.positionId && (!existing || !['draft', 'changes_requested'].includes(existing.status))) return err(notFound('Editable position not found.'));
+    let deadline = effectiveDeadline(cycle.data.deadlines.positionSubmission, exceptions.data, 'position_submission');
+    if (input.redistributionRoundId) {
+      const rounds = await ctx.repos.recovery.listRounds(input.cycleId);
+      if (!rounds.ok) return rounds;
+      const round = rounds.data.find((row) => row.id === input.redistributionRoundId);
+      if (!round || !round.invitations.some((row) => row.startupId === startup.startupId && row.status === 'accepted')) return err(notFound('Redistribution invitation not found.'));
+      deadline = round.positionDeadline;
+    }
+    if (input.action === 'submit' && ctx.clock.now().toISOString() > deadline) return err(forbidden('The effective position deadline has passed.'));
+    const requested = input.internCount * input.hoursPerIntern;
+    const held = positions.data
+      .filter((row) => row.id !== input.positionId && reservesHours(row.status))
+      .reduce((sum, row) => sum + totalWeeklyHours(row), 0);
+    if (input.action === 'submit' && held + requested > allocation.data.weeklyHours) return err(validation(`This role needs ${requested} weekly hours but only ${Math.max(0, allocation.data.weeklyHours - held)} remain.`));
+    const details = {
+      cycleId: input.cycleId,
+      startupId: startup.startupId,
+      title: input.title,
+      description: input.description,
+      requiredSkills: input.requiredSkills,
+      workArrangement: input.workArrangement,
+      additionalRequirements: input.additionalRequirements,
+      internCount: input.internCount,
+      hoursPerIntern: input.hoursPerIntern,
+      durationWeeks: input.durationWeeks,
+      supervisorName: input.supervisorName,
+      redistributionRoundId: input.redistributionRoundId,
+      status: input.action === 'draft' ? 'draft' as const : 'submitted' as const,
+    };
+    const saved = existing
+      ? await ctx.repos.positions.updateDetails(existing.id, details)
+      : await ctx.repos.positions.create(details);
+    if (!saved.ok) return saved;
+    let final = saved.data;
+    if (existing && input.action === 'submit') {
+      const transitioned = await ctx.repos.positions.updateStatus(existing.id, existing.status === 'draft' ? 'submitted' : 'resubmitted', existing.status === 'changes_requested' ? 'Startup resubmitted corrected position details.' : null);
+      if (!transitioned.ok) return transitioned;
+      final = transitioned.data;
+    }
+    const occurredAt = ctx.clock.now().toISOString();
+    await event(ctx, { cycleId: input.cycleId, entityType: 'position', entityId: final.id, action: existing ? (input.action === 'submit' ? 'resubmitted' : 'draft_updated') : (input.action === 'submit' ? 'submitted' : 'draft_created'), before: existing ? { status: existing.status } : null, after: { status: final.status, weeklyHours: requested }, occurredAt });
+    return ok(final);
+  },
+});
+
 export const confirmPlacement = defineUseCase({
   name: 'placement.confirmSelection',
-  input: z.object({
-    cycleId,
-    selectionId,
-    startsOn: z.iso.date(),
-    endsOn: z.iso.date(),
-    supervisorName: z.string().trim().min(1).max(200),
-  }).refine((row) => row.startsOn < row.endsOn, { message: 'Placement end date must follow its start date.', path: ['endsOn'] }),
+  input: z
+    .object({
+      cycleId,
+      selectionId,
+      startsOn: z.iso.date(),
+      endsOn: z.iso.date(),
+      supervisorName: z.string().trim().min(1).max(200),
+    })
+    .refine((row) => row.startsOn < row.endsOn, {
+      message: 'Placement end date must follow its start date.',
+      path: ['endsOn'],
+    }),
   authorize: { capability: 'onboarding:complete' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const cycle = await resolveCycle(ctx, input.cycleId);
     if (!cycle.ok) return cycle;
-    return ctx.repos.placements.confirmSelection(input.selectionId, {
+    const occurredAt = ctx.clock.now().toISOString();
+    const confirmed = await ctx.repos.placements.confirmSelection(input.selectionId, {
       startsOn: input.startsOn,
       endsOn: input.endsOn,
       supervisorId: null,
       supervisorName: input.supervisorName,
       confirmedBy: actor.data.userId,
-      occurredAt: ctx.clock.now().toISOString(),
+      occurredAt,
     });
+    if (!confirmed.ok) return confirmed;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'placement', entityId: confirmed.data.id, action: 'confirmed', before: null, after: { selectionId: input.selectionId, committedWeeklyHours: confirmed.data.committedWeeklyHours }, occurredAt });
+    return confirmed;
   },
 });
 
 export const setPlacementReadiness = defineUseCase({
   name: 'placement.confirmReadiness',
-  input: z.object({ cycleId, placementId, party: z.enum(['candidate', 'startup', 'details', 'qstp']) }),
+  input: z.object({
+    cycleId,
+    placementId,
+    party: z.enum(['candidate', 'startup', 'details', 'qstp']),
+  }),
   authorize: { kind: 'authenticated' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const placement = await ctx.repos.placements.findById(input.placementId);
     if (!placement.ok) return placement;
-    if (!placement.data || placement.data.cycleId !== input.cycleId) return err(notFound('Placement not found.'));
+    if (!placement.data || placement.data.cycleId !== input.cycleId)
+      return err(notFound('Placement not found.'));
     const allowed =
-      (input.party === 'candidate' && isCandidate(actor.data) && actor.data.candidateId === placement.data.candidateId) ||
-      (input.party === 'startup' && isStartup(actor.data) && actor.data.affiliations.some((row) => row.startupId === placement.data?.startupId && row.status === 'active')) ||
-      ((input.party === 'details' || input.party === 'qstp') && isQstp(actor.data) && actor.data.role !== 'viewer');
+      (input.party === 'candidate' &&
+        isCandidate(actor.data) &&
+        actor.data.candidateId === placement.data.candidateId) ||
+      (input.party === 'startup' &&
+        isStartup(actor.data) &&
+        actor.data.affiliations.some(
+          (row) => row.startupId === placement.data?.startupId && row.status === 'active',
+        )) ||
+      ((input.party === 'details' || input.party === 'qstp') &&
+        isQstp(actor.data) &&
+        actor.data.role !== 'viewer');
     if (!allowed) return err(notFound('Placement not found.'));
-    return ctx.repos.placements.setReadiness({
+    const occurredAt = ctx.clock.now().toISOString();
+    const updated = await ctx.repos.placements.setReadiness({
       placementId: input.placementId,
       party: input.party,
       actorId: actor.data.userId,
-      occurredAt: ctx.clock.now().toISOString(),
+      occurredAt,
     });
+    if (!updated.ok) return updated;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'placement', entityId: input.placementId, action: `${input.party}_readiness_confirmed`, before: null, after: { party: input.party }, occurredAt });
+    return updated;
   },
 });
 
@@ -810,11 +1237,16 @@ export const finalizePlacement = defineUseCase({
   execute: async (ctx, input) => {
     const placement = await ctx.repos.placements.findById(input.placementId);
     if (!placement.ok) return placement;
-    if (!placement.data || placement.data.cycleId !== input.cycleId) return err(notFound('Placement not found.'));
+    if (!placement.data || placement.data.cycleId !== input.cycleId)
+      return err(notFound('Placement not found.'));
     const occurredAt = ctx.clock.now().toISOString();
-    return input.action === 'ready'
+    const updated = input.action === 'ready'
       ? ctx.repos.placements.markReady(input.placementId, occurredAt)
       : ctx.repos.placements.onboard(input.placementId, occurredAt);
+    const resolved = await updated;
+    if (!resolved.ok) return resolved;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'placement', entityId: input.placementId, action: input.action === 'ready' ? 'ready_to_start' : 'onboarded', before: { status: placement.data.status }, after: { status: resolved.data.status }, occurredAt });
+    return resolved;
   },
 });
 
@@ -827,7 +1259,8 @@ export const cancelPlacement = defineUseCase({
     if (!actor.ok) return actor;
     const placement = await ctx.repos.placements.findById(input.placementId);
     if (!placement.ok) return placement;
-    if (!placement.data || placement.data.cycleId !== input.cycleId) return err(notFound('Placement not found.'));
+    if (!placement.data || placement.data.cycleId !== input.cycleId)
+      return err(notFound('Placement not found.'));
     return ctx.repos.placements.cancel(
       input.placementId,
       input.reason,
@@ -846,8 +1279,13 @@ export const confirmRecovery = defineUseCase({
     if (!actor.ok) return actor;
     const cases = await ctx.repos.recovery.listForCycle(input.cycleId);
     if (!cases.ok) return cases;
-    if (!cases.data.some((row) => row.id === input.recoveryCaseId)) return err(notFound('Recovery case not found.'));
-    return ctx.repos.recovery.confirm(input.recoveryCaseId, actor.data.userId, ctx.clock.now().toISOString());
+    if (!cases.data.some((row) => row.id === input.recoveryCaseId))
+      return err(notFound('Recovery case not found.'));
+    return ctx.repos.recovery.confirm(
+      input.recoveryCaseId,
+      actor.data.userId,
+      ctx.clock.now().toISOString(),
+    );
   },
 });
 
@@ -877,14 +1315,28 @@ export const inviteRedistribution = defineUseCase({
     cycleId,
     roundId: redistributionRoundId,
     startupId,
-    proposedHours: z.union(HOUR_TIERS.map((tier) => z.literal(tier)) as [z.ZodLiteral<0>, z.ZodLiteral<20>, z.ZodLiteral<30>, z.ZodLiteral<40>, z.ZodLiteral<60>]),
+    proposedHours: z.union(
+      HOUR_TIERS.map((tier) => z.literal(tier)) as [
+        z.ZodLiteral<0>,
+        z.ZodLiteral<20>,
+        z.ZodLiteral<30>,
+        z.ZodLiteral<40>,
+        z.ZodLiteral<60>,
+      ],
+    ),
   }),
   authorize: { capability: 'redistribution:run' as const },
   execute: async (ctx, input) => {
     const rounds = await ctx.repos.recovery.listRounds(input.cycleId);
     if (!rounds.ok) return rounds;
-    if (!rounds.data.some((row) => row.id === input.roundId)) return err(notFound('Redistribution round not found.'));
-    return ctx.repos.recovery.invite(input.roundId, input.startupId, input.proposedHours, ctx.clock.now().toISOString());
+    if (!rounds.data.some((row) => row.id === input.roundId))
+      return err(notFound('Redistribution round not found.'));
+    return ctx.repos.recovery.invite(
+      input.roundId,
+      input.startupId,
+      input.proposedHours,
+      ctx.clock.now().toISOString(),
+    );
   },
 });
 
@@ -936,7 +1388,8 @@ export const respondCandidateChoiceFallback = defineUseCase({
       actorId: actor.data.userId,
       nextResponseDeadline:
         input.response === 'declined'
-          ? (input.nextResponseDeadline ?? new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString())
+          ? (input.nextResponseDeadline ??
+            new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString())
           : null,
       occurredAt: now.toISOString(),
     });
@@ -975,34 +1428,166 @@ export const overrideCandidateChoice = defineUseCase({
   },
 });
 
-export const saveTaskTemplate = defineUseCase({
-  name: 'task.saveTemplate',
-  input: z.object({ cycleId, positionId, title: z.string().trim().min(1).max(200), instructions: z.string().trim().min(1).max(5000) }),
-  authorize: { capability: 'task:assess' as const },
+export const requestCycleInterview = defineUseCase({
+  name: 'interview.request',
+  input: z.object({ cycleId, positionId, candidateId, mode: z.enum(['online', 'in_person']) }),
+  authorize: { capability: 'interview:schedule' as const, startupId: ANY_STARTUP },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const position = await ctx.repos.positions.findById(input.positionId);
     if (!position.ok) return position;
     if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Position not found.'));
+    const scoped = authorize(actor.data, { capability: 'interview:schedule', startupId: position.data.startupId });
+    if (!scoped.ok) return err(notFound('Position not found.'));
+    if (!['approved', 'locked'].includes(position.data.status)) return err(conflict('Only approved positions can request interviews.'));
+    const pool = await ctx.repos.candidates.listPool(position.data.id);
+    if (!pool.ok) return pool;
+    const candidate = pool.data.find((row) => row.candidate.id === input.candidateId)?.candidate;
+    if (!candidate) return err(notFound('Candidate process not found.'));
+    if (!['available', 'unconfirmed'].includes(candidate.availability)) return err(conflict('The candidate is not available for an interview.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const requested = await ctx.repos.interviews.request({ positionId: input.positionId, candidateId: input.candidateId, mode: input.mode, interviewerId: actor.data.userId, createdAt: occurredAt });
+    if (!requested.ok) return requested;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'interview', entityId: requested.data.id, action: 'requested', before: null, after: { positionId: input.positionId, candidateId: input.candidateId, mode: input.mode }, occurredAt });
+    return requested;
+  },
+});
+
+export const transitionCycleInterview = defineUseCase({
+  name: 'interview.transition',
+  input: z.object({
+    cycleId,
+    interviewId,
+    action: z.enum(['confirm', 'decline', 'schedule', 'reschedule', 'complete', 'no_show', 'cancel']),
+    scheduledFor: z.iso.datetime({ offset: true }).nullable().default(null),
+    durationMinutes: z.number().int().min(15).max(240).nullable().default(null),
+    location: z.string().trim().max(2000).nullable().default(null),
+  }),
+  authorize: AUTHENTICATED,
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const interview = await ctx.repos.interviews.findById(input.interviewId);
+    if (!interview.ok) return interview;
+    if (!interview.data) return err(notFound('Interview not found.'));
+    const position = await ctx.repos.positions.findById(interview.data.positionId);
+    if (!position.ok) return position;
+    if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Interview not found.'));
+    const candidateAction = input.action === 'confirm' || input.action === 'decline';
+    if (candidateAction) {
+      if (!isCandidate(actor.data) || actor.data.candidateId !== interview.data.candidateId) return err(notFound('Interview not found.'));
+      if (interview.data.status !== 'requested') return err(conflict('This interview request is no longer awaiting a response.'));
+    } else {
+      const scoped = authorize(actor.data, { capability: 'interview:schedule', startupId: position.data.startupId });
+      if (!scoped.ok) return err(notFound('Interview not found.'));
+    }
+    const status: Interview['status'] = input.action === 'confirm' ? 'confirmed' : input.action === 'decline' || input.action === 'cancel' ? 'cancelled' : input.action === 'complete' ? 'completed' : input.action === 'no_show' ? 'no_show' : 'scheduled';
+    if (status === 'scheduled' && (!input.scheduledFor || !input.durationMinutes)) return err(validation('Choose the interview date and duration.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const transitioned = await ctx.repos.interviews.transition({ interviewId: input.interviewId, status, scheduledFor: input.scheduledFor, durationMinutes: input.durationMinutes, location: input.location, occurredAt });
+    if (!transitioned.ok) return transitioned;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'interview', entityId: input.interviewId, action: input.action, before: { status: interview.data.status }, after: { status: transitioned.data.status, scheduledFor: transitioned.data.scheduledFor }, occurredAt });
+    return transitioned;
+  },
+});
+
+export const saveCycleInterviewFeedback = defineUseCase({
+  name: 'interview.saveFeedbackForCycle',
+  input: z.object({
+    cycleId,
+    interviewId,
+    feedback: z.string().trim().min(1).max(5000),
+    recommendation: z.enum(['advance', 'reject', 'undecided']),
+  }),
+  authorize: { capability: 'interview:record' as const, startupId: ANY_STARTUP },
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const interview = await ctx.repos.interviews.findById(input.interviewId);
+    if (!interview.ok) return interview;
+    if (!interview.data) return err(notFound('Interview not found.'));
+    const position = await ctx.repos.positions.findById(interview.data.positionId);
+    if (!position.ok) return position;
+    if (!position.data || position.data.cycleId !== input.cycleId) {
+      return err(notFound('Interview not found.'));
+    }
+    const scoped = authorize(actor.data, {
+      capability: 'interview:record',
+      startupId: position.data.startupId,
+    });
+    if (!scoped.ok) return err(notFound('Interview not found.'));
+    if (!['scheduled', 'completed'].includes(interview.data.status)) {
+      return err(conflict('Feedback is available after the interview is scheduled.'));
+    }
+    const occurredAt = ctx.clock.now().toISOString();
+    const saved = await ctx.repos.interviews.saveFeedback({
+      interviewId: input.interviewId,
+      feedback: input.feedback,
+      recommendation: input.recommendation,
+      savedAt: occurredAt,
+    });
+    if (!saved.ok) return saved;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'interview',
+      entityId: input.interviewId,
+      action: 'feedback_saved',
+      before: { recommendation: interview.data.recommendation },
+      after: { recommendation: input.recommendation },
+      occurredAt,
+    });
+    return saved;
+  },
+});
+
+export const saveTaskTemplate = defineUseCase({
+  name: 'task.saveTemplate',
+  input: z.object({
+    cycleId,
+    positionId,
+    title: z.string().trim().min(1).max(200),
+    instructions: z.string().trim().min(1).max(5000),
+  }),
+  authorize: { capability: 'task:assess' as const },
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const position = await ctx.repos.positions.findById(input.positionId);
+    if (!position.ok) return position;
+    if (!position.data || position.data.cycleId !== input.cycleId)
+      return err(notFound('Position not found.'));
     if (isStartup(actor.data)) {
-      const scoped = authorize(actor.data, { capability: 'task:assess', startupId: position.data.startupId });
+      const scoped = authorize(actor.data, {
+        capability: 'task:assess',
+        startupId: position.data.startupId,
+      });
       if (!scoped.ok) return err(notFound('Position not found.'));
     }
-    return ctx.repos.tasks.saveTemplate({
+    const occurredAt = ctx.clock.now().toISOString();
+    const saved = await ctx.repos.tasks.saveTemplate({
       cycleId: input.cycleId,
       positionId: input.positionId,
       title: input.title,
       instructions: input.instructions,
       createdBy: actor.data.userId,
-      createdAt: ctx.clock.now().toISOString(),
+      createdAt: occurredAt,
     });
+    if (!saved.ok) return saved;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'task_template', entityId: saved.data.id, action: 'created', before: null, after: { positionId: input.positionId, title: input.title }, occurredAt });
+    return saved;
   },
 });
 
 export const assignTask = defineUseCase({
   name: 'task.assign',
-  input: z.object({ cycleId, positionId, candidateId, templateId: taskTemplateId.nullable().default(null), dueAt: z.iso.datetime({ offset: true }) }),
+  input: z.object({
+    cycleId,
+    positionId,
+    candidateId,
+    templateId: taskTemplateId.nullable().default(null),
+    dueAt: z.iso.datetime({ offset: true }),
+  }),
   authorize: { capability: 'task:assess' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
@@ -1013,13 +1598,19 @@ export const assignTask = defineUseCase({
     ]);
     if (!position.ok) return position;
     if (!pool.ok) return pool;
-    if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Position not found.'));
-    if (!pool.data.some((row) => row.candidate.id === input.candidateId)) return err(notFound('Candidate process not found.'));
+    if (!position.data || position.data.cycleId !== input.cycleId)
+      return err(notFound('Position not found.'));
+    if (!pool.data.some((row) => row.candidate.id === input.candidateId))
+      return err(notFound('Candidate process not found.'));
     if (isStartup(actor.data)) {
-      const scoped = authorize(actor.data, { capability: 'task:assess', startupId: position.data.startupId });
+      const scoped = authorize(actor.data, {
+        capability: 'task:assess',
+        startupId: position.data.startupId,
+      });
       if (!scoped.ok) return err(notFound('Position not found.'));
     }
-    return ctx.repos.tasks.assign({
+    const occurredAt = ctx.clock.now().toISOString();
+    const assigned = await ctx.repos.tasks.assign({
       cycleId: input.cycleId,
       templateId: input.templateId,
       positionId: input.positionId,
@@ -1032,27 +1623,88 @@ export const assignTask = defineUseCase({
       linkUrl: null,
       reviewNotes: null,
       reviewedBy: null,
-      occurredAt: ctx.clock.now().toISOString(),
+      occurredAt,
     });
+    if (!assigned.ok) return assigned;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'task_assignment', entityId: assigned.data.id, action: 'assigned', before: null, after: { positionId: input.positionId, candidateId: input.candidateId, dueAt: input.dueAt }, occurredAt });
+    return assigned;
   },
 });
 
 export const submitTask = defineUseCase({
   name: 'task.submit',
-  input: z.object({ cycleId, assignmentId: taskAssignmentId, fileName: z.string().trim().max(240).nullable(), linkUrl: z.url().nullable() }),
+  input: z.object({
+    cycleId,
+    assignmentId: taskAssignmentId,
+    fileName: z.string().trim().max(240).nullable(),
+    linkUrl: z.url().nullable(),
+  }),
   authorize: { capability: 'task:submit_own' as const },
   execute: async (ctx, input) => {
     if (!isCandidate(ctx.actor)) return err(notFound('Task assignment not found.'));
     const assignments = await ctx.repos.tasks.listAssignments(ctx.actor.candidateId);
     if (!assignments.ok) return assignments;
-    if (!assignments.data.some((row) => row.id === input.assignmentId && row.cycleId === input.cycleId)) return err(notFound('Task assignment not found.'));
-    return ctx.repos.tasks.submit(input.assignmentId, ctx.actor.candidateId, input.fileName, input.linkUrl, ctx.clock.now().toISOString());
+    if (
+      !assignments.data.some(
+        (row) => row.id === input.assignmentId && row.cycleId === input.cycleId,
+      )
+    )
+      return err(notFound('Task assignment not found.'));
+    const current = assignments.data.find((row) => row.id === input.assignmentId)!;
+    const occurredAt = ctx.clock.now().toISOString();
+    const submitted = await ctx.repos.tasks.submit(
+      input.assignmentId,
+      ctx.actor.candidateId,
+      input.fileName,
+      input.linkUrl,
+      occurredAt,
+    );
+    if (!submitted.ok) return submitted;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'task_assignment', entityId: input.assignmentId, action: 'submitted', before: { status: current.status }, after: { status: submitted.data.status, lateAccepted: submitted.data.lateAccepted }, occurredAt });
+    return submitted;
   },
 });
 
 export const reviewTask = defineUseCase({
   name: 'task.review',
-  input: z.object({ cycleId, assignmentId: taskAssignmentId, notes: z.string().trim().min(1).max(5000) }),
+  input: z.object({
+    cycleId,
+    assignmentId: taskAssignmentId,
+    notes: z.string().trim().min(1).max(5000),
+  }),
+  authorize: { capability: 'task:assess' as const },
+  execute: async (ctx, input) => {
+    const actor = requireActor(ctx);
+    if (!actor.ok) return actor;
+    const assignments = await ctx.repos.tasks.listForCycle(input.cycleId);
+    if (!assignments.ok) return assignments;
+    const assignment = assignments.data.find((row) => row.id === input.assignmentId);
+    if (!assignment) return err(notFound('Task assignment not found.'));
+    const position = await ctx.repos.positions.findById(assignment.positionId);
+    if (!position.ok) return position;
+    if (isStartup(actor.data) && position.data) {
+      const scoped = authorize(actor.data, {
+        capability: 'task:assess',
+        startupId: position.data.startupId,
+      });
+      if (!scoped.ok) return err(notFound('Task assignment not found.'));
+    }
+    const occurredAt = ctx.clock.now().toISOString();
+    const reviewed = await ctx.repos.tasks.review(
+      input.assignmentId,
+      actor.data.userId,
+      input.notes,
+      occurredAt,
+    );
+    if (!reviewed.ok) return reviewed;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'task_assignment', entityId: input.assignmentId, action: 'reviewed', before: { status: assignment.status }, after: { status: reviewed.data.status }, occurredAt });
+    return reviewed;
+  },
+});
+
+export const withdrawTask = defineUseCase({
+  name: 'task.withdraw',
+  input: z.object({ cycleId, assignmentId: taskAssignmentId }),
   authorize: { capability: 'task:assess' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
@@ -1067,13 +1719,24 @@ export const reviewTask = defineUseCase({
       const scoped = authorize(actor.data, { capability: 'task:assess', startupId: position.data.startupId });
       if (!scoped.ok) return err(notFound('Task assignment not found.'));
     }
-    return ctx.repos.tasks.review(input.assignmentId, actor.data.userId, input.notes, ctx.clock.now().toISOString());
+    const occurredAt = ctx.clock.now().toISOString();
+    const withdrawn = await ctx.repos.tasks.withdraw(input.assignmentId, occurredAt);
+    if (!withdrawn.ok) return withdrawn;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'task_assignment', entityId: input.assignmentId, action: 'withdrawn', before: { status: assignment.status }, after: { status: withdrawn.data.status }, occurredAt });
+    return withdrawn;
   },
 });
 
 export const saveRequirementTemplate = defineUseCase({
   name: 'requirement.saveTemplate',
-  input: z.object({ cycleId, title: z.string().trim().min(1).max(200), owner: z.enum(['candidate', 'startup', 'qstp']), required: z.boolean(), positionId: positionId.nullable().default(null), active: z.boolean().default(true) }),
+  input: z.object({
+    cycleId,
+    title: z.string().trim().min(1).max(200),
+    owner: z.enum(['candidate', 'startup', 'qstp']),
+    required: z.boolean(),
+    positionId: positionId.nullable().default(null),
+    active: z.boolean().default(true),
+  }),
   authorize: AUTHENTICATED,
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
@@ -1083,21 +1746,137 @@ export const saveRequirementTemplate = defineUseCase({
       const allowed = authorize(actor.data, { capability: 'document:verify' });
       if (!allowed.ok) return allowed;
     } else {
-      if (!input.positionId || input.owner !== 'startup') return err(forbidden('Startups can add startup-owned, position-specific requirements only.'));
+      if (!input.positionId || input.owner !== 'startup')
+        return err(
+          forbidden('Startups can add startup-owned, position-specific requirements only.'),
+        );
       const position = await ctx.repos.positions.findById(input.positionId);
       if (!position.ok) return position;
-      if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Position not found.'));
-      const scoped = authorize(actor.data, { capability: 'position:submit', startupId: position.data.startupId });
+      if (!position.data || position.data.cycleId !== input.cycleId)
+        return err(notFound('Position not found.'));
+      const scoped = authorize(actor.data, {
+        capability: 'position:submit',
+        startupId: position.data.startupId,
+      });
       if (!scoped.ok) return err(notFound('Position not found.'));
       const placements = await ctx.repos.placements.listForCycle(input.cycleId);
       if (!placements.ok) return placements;
-      if (placements.data.some((row) => row.positionId === input.positionId)) return err(conflict('Position-specific requirements must be added before placement confirmation.'));
+      if (placements.data.some((row) => row.positionId === input.positionId))
+        return err(
+          conflict('Position-specific requirements must be added before placement confirmation.'),
+        );
     }
-    return ctx.repos.requirements.saveTemplate({ ...input, occurredAt: ctx.clock.now().toISOString() });
+    const occurredAt = ctx.clock.now().toISOString();
+    const saved = await ctx.repos.requirements.saveTemplate({
+      ...input,
+      occurredAt,
+    });
+    if (!saved.ok) return saved;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'requirement_template',
+      entityId: saved.data.id,
+      action: 'created',
+      before: null,
+      after: { title: input.title, owner: input.owner, required: input.required },
+      occurredAt,
+    });
+    return saved;
   },
 });
 
-async function findPlacementRequirement(ctx: Parameters<typeof requireActor>[0], cycle: CycleId, requirementId: z.infer<typeof placementRequirementId>) {
+export const amendPlacementRequirement = defineUseCase({
+  name: 'requirement.amendPlacementChecklist',
+  input: z.object({
+    cycleId,
+    placementId,
+    title: z.string().trim().min(1).max(200),
+    owner: z.enum(['candidate', 'startup', 'qstp']),
+    required: z.boolean(),
+    reason: z.string().trim().min(10).max(2000),
+  }),
+  authorize: { capability: 'document:verify' as const },
+  execute: async (ctx, input) => {
+    const placement = await ctx.repos.placements.findById(input.placementId);
+    if (!placement.ok) return placement;
+    if (!placement.data || placement.data.cycleId !== input.cycleId) {
+      return err(notFound('Placement not found.'));
+    }
+    if (placement.data.status === 'cancelled') {
+      return err(conflict('Cancelled placements are read-only.'));
+    }
+    const occurredAt = ctx.clock.now().toISOString();
+    const amended = await ctx.repos.requirements.amend({
+      placementId: input.placementId,
+      templateId: null,
+      title: input.title,
+      owner: input.owner,
+      required: input.required,
+      status: input.owner === 'qstp' ? 'requested' : 'awaiting_upload',
+      amendmentReason: null,
+      reason: input.reason,
+      occurredAt,
+    });
+    if (!amended.ok) return amended;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'placement_requirement',
+      entityId: amended.data.id,
+      action: 'checklist_amended',
+      before: null,
+      after: { placementId: input.placementId, title: input.title, owner: input.owner, required: input.required },
+      reason: input.reason,
+      occurredAt,
+    });
+    return amended;
+  },
+});
+
+export const updateRequirementTemplate = defineUseCase({
+  name: 'requirement.updateTemplate',
+  input: z.object({
+    cycleId,
+    templateId: requirementTemplateId,
+    title: z.string().trim().min(1).max(200),
+    owner: z.enum(['candidate', 'startup', 'qstp']),
+    required: z.boolean(),
+    active: z.boolean(),
+    reason: z.string().trim().min(10).max(2000),
+  }),
+  authorize: { capability: 'document:verify' as const },
+  execute: async (ctx, input) => {
+    const templates = await ctx.repos.requirements.listTemplates(input.cycleId);
+    if (!templates.ok) return templates;
+    const template = templates.data.find((row) => row.id === input.templateId);
+    if (!template) return err(notFound('Requirement template not found.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const updated = await ctx.repos.requirements.updateTemplate(input.templateId, {
+      title: input.title,
+      owner: input.owner,
+      required: input.required,
+      active: input.active,
+      occurredAt,
+    });
+    if (!updated.ok) return updated;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'requirement_template',
+      entityId: input.templateId,
+      action: input.active ? 'updated' : 'deactivated',
+      before: { title: template.title, owner: template.owner, required: template.required, active: template.active },
+      after: { title: input.title, owner: input.owner, required: input.required, active: input.active },
+      reason: input.reason,
+      occurredAt,
+    });
+    return updated;
+  },
+});
+
+async function findPlacementRequirement(
+  ctx: Parameters<typeof requireActor>[0],
+  cycle: CycleId,
+  requirementId: z.infer<typeof placementRequirementId>,
+) {
   const placements = await ctx.repos.placements.listForCycle(cycle);
   if (!placements.ok) return err(placements.error);
   for (const placement of placements.data) {
@@ -1111,49 +1890,155 @@ async function findPlacementRequirement(ctx: Parameters<typeof requireActor>[0],
 
 export const submitRequirement = defineUseCase({
   name: 'requirement.submit',
-  input: z.object({ cycleId, requirementId: placementRequirementId, fileName: z.string().trim().min(1).max(240), extractedFields: z.array(z.object({ key: z.string().trim().min(1).max(100), extracted: z.string().nullable(), confirmed: z.string().nullable() })).max(30).default([]) }),
+  input: z.object({
+    cycleId,
+    requirementId: placementRequirementId,
+    fileName: z.string().trim().min(1).max(240),
+    extractedFields: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1).max(100),
+          extracted: z.string().nullable(),
+          confirmed: z.string().nullable(),
+        }),
+      )
+      .max(30)
+      .default([]),
+  }),
   authorize: AUTHENTICATED,
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const found = await findPlacementRequirement(ctx, input.cycleId, input.requirementId);
     if (!found.ok) return found;
+    if (found.data.placement.status === 'cancelled') {
+      return err(conflict('Cancelled placements are read-only.'));
+    }
     const owns =
-      (found.data.requirement.owner === 'candidate' && isCandidate(actor.data) && actor.data.candidateId === found.data.placement.candidateId) ||
-      (found.data.requirement.owner === 'startup' && isStartup(actor.data) && actor.data.affiliations.some((row) => row.startupId === found.data.placement.startupId && row.status === 'active')) ||
-      (found.data.requirement.owner === 'qstp' && isQstp(actor.data) && actor.data.role !== 'viewer');
+      (found.data.requirement.owner === 'candidate' &&
+        isCandidate(actor.data) &&
+        actor.data.candidateId === found.data.placement.candidateId) ||
+      (found.data.requirement.owner === 'startup' &&
+        isStartup(actor.data) &&
+        actor.data.affiliations.some(
+          (row) => row.startupId === found.data.placement.startupId && row.status === 'active',
+        )) ||
+      (found.data.requirement.owner === 'qstp' &&
+        isQstp(actor.data) &&
+        actor.data.role !== 'viewer');
     if (!owns) return err(notFound('Requirement not found.'));
-    return ctx.repos.requirements.submit({ requirementId: input.requirementId, fileName: input.fileName, submittedBy: actor.data.userId, extractedFields: input.extractedFields, occurredAt: ctx.clock.now().toISOString() });
+    const occurredAt = ctx.clock.now().toISOString();
+    const submitted = await ctx.repos.requirements.submit({
+      requirementId: input.requirementId,
+      fileName: input.fileName,
+      submittedBy: actor.data.userId,
+      extractedFields: input.extractedFields,
+      occurredAt,
+    });
+    if (!submitted.ok) return submitted;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'placement_requirement',
+      entityId: input.requirementId,
+      action: submitted.data.revision > 1 ? 'resubmitted' : 'uploaded',
+      before: { status: found.data.requirement.status },
+      after: { revision: submitted.data.revision, fileName: submitted.data.fileName },
+      occurredAt,
+    });
+    return submitted;
   },
 });
 
 export const decideRequirement = defineUseCase({
   name: 'requirement.decide',
-  input: z.object({ cycleId, requirementId: placementRequirementId, decision: z.enum(['approved', 'correction_requested', 'rejected', 'waived']), reason: z.string().trim().max(2000).nullable().default(null) }),
+  input: z.object({
+    cycleId,
+    requirementId: placementRequirementId,
+    decision: z.enum(['approved', 'correction_requested', 'rejected', 'expired', 'waived']),
+    reason: z.string().trim().max(2000).nullable().default(null),
+  }),
   authorize: { capability: 'document:verify' as const },
   execute: async (ctx, input) => {
     const found = await findPlacementRequirement(ctx, input.cycleId, input.requirementId);
     if (!found.ok) return found;
-    return ctx.repos.requirements.decide({ requirementId: input.requirementId, decision: input.decision, reason: input.reason, occurredAt: ctx.clock.now().toISOString() });
+    if (found.data.placement.status === 'cancelled') {
+      return err(conflict('Cancelled placements are read-only.'));
+    }
+    if (['correction_requested', 'rejected', 'expired'].includes(input.decision) && !input.reason) {
+      return err(validation('This decision requires a reason.'));
+    }
+    const occurredAt = ctx.clock.now().toISOString();
+    const decided = await ctx.repos.requirements.decide({
+      requirementId: input.requirementId,
+      decision: input.decision,
+      reason: input.reason,
+      occurredAt,
+    });
+    if (!decided.ok) return decided;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'placement_requirement',
+      entityId: input.requirementId,
+      action: input.decision,
+      before: { status: found.data.requirement.status },
+      after: { status: decided.data.status },
+      reason: input.reason,
+      occurredAt,
+    });
+    return decided;
   },
 });
 
 export const signPlacementAgreement = defineUseCase({
   name: 'placement.signAgreement',
-  input: z.object({ cycleId, placementId, kind: z.enum(['qstp_agreement', 'startup_agreement']), signerName: z.string().trim().min(1).max(200), declarationAccepted: z.literal(true), documentOpenedAt: z.iso.datetime({ offset: true }) }),
+  input: z.object({
+    cycleId,
+    placementId,
+    kind: z.enum(['qstp_agreement', 'startup_agreement']),
+    signerName: z.string().trim().min(1).max(200),
+    declarationAccepted: z.literal(true),
+    documentOpenedAt: z.iso.datetime({ offset: true }),
+  }),
   authorize: AUTHENTICATED,
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const placement = await ctx.repos.placements.findById(input.placementId);
     if (!placement.ok) return placement;
-    if (!placement.data || placement.data.cycleId !== input.cycleId) return err(notFound('Placement not found.'));
+    if (!placement.data || placement.data.cycleId !== input.cycleId)
+      return err(notFound('Placement not found.'));
+    if (placement.data.status === 'cancelled') {
+      return err(conflict('Cancelled placements are read-only.'));
+    }
     const allowed =
       (input.kind === 'qstp_agreement' && isQstp(actor.data) && actor.data.role !== 'viewer') ||
-      (input.kind === 'startup_agreement' && isStartup(actor.data) && actor.data.affiliations.some((row) => row.startupId === placement.data?.startupId && row.status === 'active'));
+      (input.kind === 'startup_agreement' &&
+        isStartup(actor.data) &&
+        actor.data.affiliations.some(
+          (row) => row.startupId === placement.data?.startupId && row.status === 'active',
+        ));
     if (!allowed) return err(notFound('Placement not found.'));
     const now = ctx.clock.now().toISOString();
-    return ctx.repos.requirements.sign({ placementId: input.placementId, kind: input.kind, signerId: actor.data.userId, signerName: input.signerName, declarationAccepted: true, documentOpenedAt: input.documentOpenedAt, signedAt: now });
+    const signed = await ctx.repos.requirements.sign({
+      placementId: input.placementId,
+      kind: input.kind,
+      signerId: actor.data.userId,
+      signerName: input.signerName,
+      declarationAccepted: true,
+      documentOpenedAt: input.documentOpenedAt,
+      signedAt: now,
+    });
+    if (!signed.ok) return signed;
+    await event(ctx, {
+      cycleId: input.cycleId,
+      entityType: 'placement',
+      entityId: input.placementId,
+      action: 'agreement_signed',
+      before: null,
+      after: { kind: input.kind, signerName: input.signerName },
+      occurredAt: now,
+    });
+    return signed;
   },
 });
 
@@ -1164,14 +2049,23 @@ export const protectRecovery = defineUseCase({
   execute: async (ctx, input) => {
     const cases = await ctx.repos.recovery.listForCycle(input.cycleId);
     if (!cases.ok) return cases;
-    if (!cases.data.some((row) => row.id === input.recoveryCaseId)) return err(notFound('Recovery case not found.'));
-    return ctx.repos.recovery.protect(input.recoveryCaseId, input.until, ctx.clock.now().toISOString());
+    if (!cases.data.some((row) => row.id === input.recoveryCaseId))
+      return err(notFound('Recovery case not found.'));
+    return ctx.repos.recovery.protect(
+      input.recoveryCaseId,
+      input.until,
+      ctx.clock.now().toISOString(),
+    );
   },
 });
 
 export const respondRedistributionInvitation = defineUseCase({
   name: 'redistribution.respond',
-  input: z.object({ cycleId, roundId: redistributionRoundId, response: z.enum(['accepted', 'declined']) }),
+  input: z.object({
+    cycleId,
+    roundId: redistributionRoundId,
+    response: z.enum(['accepted', 'declined']),
+  }),
   authorize: AUTHENTICATED,
   execute: async (ctx, input) => {
     if (!isStartup(ctx.actor)) return err(notFound('Invitation not found.'));
@@ -1179,9 +2073,18 @@ export const respondRedistributionInvitation = defineUseCase({
     const roundResult = await ctx.repos.recovery.listRounds(input.cycleId);
     if (!roundResult.ok) return roundResult;
     const round = roundResult.data.find((row) => row.id === input.roundId);
-    const invitation = round?.invitations.find((row) => startupActor.affiliations.some((affiliation) => affiliation.status === 'active' && affiliation.startupId === row.startupId));
+    const invitation = round?.invitations.find((row) =>
+      startupActor.affiliations.some(
+        (affiliation) => affiliation.status === 'active' && affiliation.startupId === row.startupId,
+      ),
+    );
     if (!round || !invitation) return err(notFound('Invitation not found.'));
-    return ctx.repos.recovery.respond(input.roundId, invitation.startupId, input.response, ctx.clock.now().toISOString());
+    return ctx.repos.recovery.respond(
+      input.roundId,
+      invitation.startupId,
+      input.response,
+      ctx.clock.now().toISOString(),
+    );
   },
 });
 
@@ -1192,22 +2095,52 @@ export const closeRedistributionRound = defineUseCase({
   execute: async (ctx, input) => {
     const rounds = await ctx.repos.recovery.listRounds(input.cycleId);
     if (!rounds.ok) return rounds;
-    if (!rounds.data.some((row) => row.id === input.roundId)) return err(notFound('Redistribution round not found.'));
+    if (!rounds.data.some((row) => row.id === input.roundId))
+      return err(notFound('Redistribution round not found.'));
     return ctx.repos.recovery.closeRound(input.roundId, ctx.clock.now().toISOString());
+  },
+});
+
+export const expireRedistributionInvitations = defineUseCase({
+  name: 'redistribution.expireInvitations',
+  input: z.object({ cycleId, roundId: redistributionRoundId }),
+  authorize: { capability: 'redistribution:run' as const },
+  execute: async (ctx, input) => {
+    const rounds = await ctx.repos.recovery.listRounds(input.cycleId);
+    if (!rounds.ok) return rounds;
+    const round = rounds.data.find((row) => row.id === input.roundId);
+    if (!round) return err(notFound('Redistribution round not found.'));
+    const occurredAt = ctx.clock.now().toISOString();
+    const expired = await ctx.repos.recovery.expireInvitations(input.roundId, occurredAt);
+    if (!expired.ok) return expired;
+    await event(ctx, { cycleId: input.cycleId, entityType: 'redistribution_round', entityId: input.roundId, action: 'invitations_expired', before: { open: round.invitations.filter((row) => row.status === 'invited').length }, after: { open: 0 }, occurredAt });
+    return expired;
   },
 });
 
 export const resolveSelectionConflict = defineUseCase({
   name: 'selection.resolveRecordedConflict',
-  input: z.object({ cycleId, conflictId: selectionConflictId, decision: z.enum(['dismissed', 'overridden']), reason: z.string().trim().min(1).max(2000) }),
+  input: z.object({
+    cycleId,
+    conflictId: selectionConflictId,
+    decision: z.enum(['dismissed', 'overridden']),
+    reason: z.string().trim().min(1).max(2000),
+  }),
   authorize: { capability: 'selection:resolve_conflict' as const },
   execute: async (ctx, input) => {
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
     const conflicts = await ctx.repos.conflicts.listForCycle(input.cycleId);
     if (!conflicts.ok) return conflicts;
-    if (!conflicts.data.some((row) => row.id === input.conflictId)) return err(notFound('Selection conflict not found.'));
-    return ctx.repos.conflicts.resolve(input.conflictId, input.decision, actor.data.userId, input.reason, ctx.clock.now().toISOString());
+    if (!conflicts.data.some((row) => row.id === input.conflictId))
+      return err(notFound('Selection conflict not found.'));
+    return ctx.repos.conflicts.resolve(
+      input.conflictId,
+      input.decision,
+      actor.data.userId,
+      input.reason,
+      ctx.clock.now().toISOString(),
+    );
   },
 });
 

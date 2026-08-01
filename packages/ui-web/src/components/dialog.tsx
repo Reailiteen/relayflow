@@ -38,8 +38,7 @@ function Overlay({ className, ...props }: React.ComponentProps<typeof DialogPrim
   );
 }
 
-export interface DialogContentProps
-  extends React.ComponentProps<typeof DialogPrimitive.Content> {
+export interface DialogContentProps extends React.ComponentProps<typeof DialogPrimitive.Content> {
   title: string;
   /** Required: screen readers announce it, and it forces the author to say
    *  what the dialog is for. Pass `srOnlyDescription` to hide it visually. */
@@ -114,8 +113,9 @@ export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLD
   );
 }
 
-export interface SidePanelContentProps
-  extends React.ComponentProps<typeof DialogPrimitive.Content> {
+export interface SidePanelContentProps extends React.ComponentProps<
+  typeof DialogPrimitive.Content
+> {
   title: string;
   description: string;
   width?: 'md' | 'lg' | 'xl' | undefined;
@@ -170,7 +170,9 @@ export function SidePanelContent({
 }
 
 export function SidePanelBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6', className)} {...props} />;
+  return (
+    <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6', className)} {...props} />
+  );
 }
 
 export function SidePanelFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -192,8 +194,7 @@ export function SidePanelFooter({ className, ...props }: React.HTMLAttributes<HT
  * table column, and the sections are visited far less often than the data is
  * read.
  */
-export interface DrawerContentProps
-  extends React.ComponentProps<typeof DialogPrimitive.Content> {
+export interface DrawerContentProps extends React.ComponentProps<typeof DialogPrimitive.Content> {
   title: string;
   description: string;
   side?: 'left' | 'right' | undefined;

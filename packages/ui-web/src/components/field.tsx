@@ -53,10 +53,7 @@ function Shell({
       {children}
 
       {(hint ?? error) && (
-        <p
-          id={describedBy}
-          className={cn('text-xs', error ? 'text-critical-text' : 'text-ink-3')}
-        >
+        <p id={describedBy} className={cn('text-xs', error ? 'text-critical-text' : 'text-ink-3')}>
           {error ?? hint}
         </p>
       )}
@@ -65,8 +62,7 @@ function Shell({
 }
 
 export interface TextFieldProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'id'>,
-    FieldShellProps {}
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'id'>, FieldShellProps {}
 
 export function TextField({ label, hint, error, required, className, ...props }: TextFieldProps) {
   const id = useId();
@@ -94,8 +90,7 @@ export function TextField({ label, hint, error, required, className, ...props }:
 }
 
 export interface TextAreaFieldProps
-  extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'id'>,
-    FieldShellProps {}
+  extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'id'>, FieldShellProps {}
 
 export function TextAreaField({
   label,
@@ -132,10 +127,17 @@ export function TextAreaField({
 }
 
 export interface SelectFieldProps
-  extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'id'>,
-    FieldShellProps {}
+  extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'id'>, FieldShellProps {}
 
-export function SelectField({ label, hint, error, required, className, children, ...props }: SelectFieldProps) {
+export function SelectField({
+  label,
+  hint,
+  error,
+  required,
+  className,
+  children,
+  ...props
+}: SelectFieldProps) {
   const id = useId();
   const describedBy = `${id}-describe`;
 

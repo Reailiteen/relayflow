@@ -687,7 +687,7 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
         durationWeeks: input.durationWeeks,
         supervisorId: null,
         supervisorName: input.supervisorName,
-        status: 'submitted',
+        status: input.status ?? 'submitted',
         reviewNote: null,
         reviewHistory: [],
         redistributionRoundId: input.redistributionRoundId,
@@ -696,6 +696,30 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       };
       store.positions.push(position);
       return Promise.resolve(ok(position));
+    },
+
+    updateDetails: (id, input) => {
+      const position = store.positions.find((row) => row.id === id);
+      if (!position) return Promise.resolve(err(notFound('Position not found.')));
+      if (!['draft', 'changes_requested'].includes(position.status)) {
+        return Promise.resolve(err(conflict('Only drafts and requested corrections can be edited.')));
+      }
+      const next: Position = {
+        ...position,
+        title: input.title,
+        description: input.description,
+        requiredSkills: input.requiredSkills,
+        workArrangement: input.workArrangement,
+        additionalRequirements: input.additionalRequirements,
+        internCount: input.internCount,
+        hoursPerIntern: input.hoursPerIntern,
+        durationWeeks: input.durationWeeks,
+        supervisorName: input.supervisorName,
+        redistributionRoundId: input.redistributionRoundId,
+        updatedAt: new Date().toISOString(),
+      };
+      store.positions[store.positions.indexOf(position)] = next;
+      return Promise.resolve(ok(next));
     },
 
     updateStatus: (id, status, reviewNote) => {
@@ -856,7 +880,12 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     listForCandidate: (candidateId) =>
       Promise.resolve(ok(store.selections.filter((s) => s.candidateId === candidateId))),
 
-    listForCycle: () => Promise.resolve(ok([...store.selections])),
+    listForCycle: (cycleId) => {
+      const positionIds = new Set(
+        store.positions.filter((position) => position.cycleId === cycleId).map((position) => position.id),
+      );
+      return Promise.resolve(ok(store.selections.filter((selection) => positionIds.has(selection.positionId))));
+    },
 
     reserve: (input) => {
       // The port's contract: refuse a second active claim. Enforced here so the
@@ -1149,6 +1178,71 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
         ),
       ),
 
+    request: (input) =>
+      Promise.resolve(
+        ok(
+          replaceInterview({
+            id: uuid() as Interview['id'],
+            positionId: input.positionId,
+            candidateId: input.candidateId,
+            mode: input.mode,
+            status: 'requested',
+            scheduledFor: null,
+            durationMinutes: null,
+            location: null,
+            recordingUrl: null,
+            transcriptStatus: 'none',
+            transcript: null,
+            aiSummary: null,
+            feedback: null,
+            recommendation: null,
+            interviewerId: input.interviewerId,
+            createdAt: input.createdAt,
+            updatedAt: input.createdAt,
+          }),
+        ),
+      ),
+
+    transition: (input) => {
+      const interview = store.interviews.find((row) => row.id === input.interviewId);
+      if (!interview) return Promise.resolve(err(notFound('Interview not found.')));
+      const allowed: Record<Interview['status'], readonly Interview['status'][]> = {
+        requested: ['confirmed', 'cancelled'],
+        confirmed: ['scheduled', 'cancelled'],
+        scheduled: ['scheduled', 'completed', 'cancelled', 'no_show'],
+        completed: [],
+        cancelled: [],
+        no_show: [],
+      };
+      if (!allowed[interview.status].includes(input.status)) {
+        return Promise.resolve(
+          err(conflict(`Interview cannot move from ${interview.status} to ${input.status}.`)),
+        );
+      }
+      if (input.status === 'scheduled' && (!input.scheduledFor || !input.durationMinutes)) {
+        return Promise.resolve(err(validation('A scheduled interview needs a date and duration.')));
+      }
+      return Promise.resolve(
+        ok(
+          replaceInterview({
+            ...interview,
+            status: input.status,
+            scheduledFor:
+              input.status === 'scheduled'
+                ? (input.scheduledFor ?? null)
+                : interview.scheduledFor,
+            durationMinutes:
+              input.status === 'scheduled'
+                ? (input.durationMinutes ?? null)
+                : interview.durationMinutes,
+            location:
+              input.status === 'scheduled' ? (input.location ?? null) : interview.location,
+            updatedAt: input.occurredAt,
+          }),
+        ),
+      );
+    },
+
     attachRecording: (input) => {
       const interview = store.interviews.find((i) => i.id === input.interviewId);
       if (!interview) return Promise.resolve(err(notFound('Interview not found.')));
@@ -1406,6 +1500,37 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     },
     listForCycle: (cycleId) =>
       Promise.resolve(ok(store.prioritizationRuns.filter((row) => row.cycleId === cycleId))),
+    adjust: (runId, startupId, proposedHours, adjustedBy, adjustedAt) => {
+      const source = store.prioritizationRuns.find((row) => row.id === runId);
+      if (!source || source.status !== 'draft') {
+        return Promise.resolve(err(notFound('Draft prioritization run not found.')));
+      }
+      const proposal = source.proposals.find((row) => row.startupId === startupId);
+      if (!proposal) return Promise.resolve(err(notFound('Proposal not found.')));
+      const proposals = source.proposals.map((row) =>
+        row.startupId === startupId ? { ...row, proposedHours } : row,
+      );
+      const proposedTotal = proposals.reduce((sum, row) => sum + row.proposedHours, 0);
+      if (proposedTotal > source.budgetHours) {
+        return Promise.resolve(err(conflict('Adjusted proposals exceed the cycle budget.')));
+      }
+      const previous = store.prioritizationRuns.filter((row) => row.cycleId === source.cycleId);
+      const adjusted: PrioritizationRun = {
+        ...source,
+        id: uuid() as PrioritizationRun['id'],
+        version: Math.max(...previous.map((row) => row.version), 0) + 1,
+        proposals,
+        proposedHours: proposedTotal,
+        createdBy: adjustedBy,
+        createdAt: adjustedAt,
+      };
+      store.prioritizationRuns[store.prioritizationRuns.indexOf(source)] = {
+        ...source,
+        status: 'superseded',
+      };
+      store.prioritizationRuns.push(adjusted);
+      return Promise.resolve(ok(adjusted));
+    },
     confirm: (runId, confirmedAt) => {
       const run = store.prioritizationRuns.find((row) => row.id === runId);
       if (!run) return Promise.resolve(err(notFound('Prioritization run not found.')));
@@ -1476,6 +1601,16 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       store.taskAssignments[store.taskAssignments.indexOf(assignment)] = next;
       return Promise.resolve(ok(next));
     },
+    withdraw: (assignmentId, occurredAt) => {
+      const assignment = store.taskAssignments.find((row) => row.id === assignmentId);
+      if (!assignment) return Promise.resolve(err(notFound('Task assignment not found.')));
+      if (!['assigned', 'submitted'].includes(assignment.status)) {
+        return Promise.resolve(err(conflict('This task can no longer be withdrawn.')));
+      }
+      const next: TaskAssignment = { ...assignment, status: 'withdrawn', updatedAt: occurredAt };
+      store.taskAssignments[store.taskAssignments.indexOf(assignment)] = next;
+      return Promise.resolve(ok(next));
+    },
   };
 
   const requirements: RequirementPort = {
@@ -1491,6 +1626,20 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       };
       store.requirementTemplates.push(template);
       return Promise.resolve(ok(template));
+    },
+    updateTemplate: (id, input) => {
+      const template = store.requirementTemplates.find((row) => row.id === id);
+      if (!template) return Promise.resolve(err(notFound('Requirement template not found.')));
+      const next: DocumentRequirementTemplate = {
+        ...template,
+        title: input.title,
+        owner: input.owner,
+        required: input.required,
+        active: input.active,
+        updatedAt: input.occurredAt,
+      };
+      store.requirementTemplates[store.requirementTemplates.indexOf(template)] = next;
+      return Promise.resolve(ok(next));
     },
     snapshotForPlacement: (placementId, occurredAt) => {
       const placement = store.placements.find((row) => row.id === placementId);
@@ -1953,6 +2102,21 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
         status: response === 'accepted' ? 'accelerated_positions' : round.status,
         invitations: round.invitations.map((row) =>
           row.startupId === startupId ? { ...row, status: response, respondedAt: occurredAt } : row,
+        ),
+      };
+      store.redistributionRounds[store.redistributionRounds.indexOf(round)] = next;
+      return Promise.resolve(ok(next));
+    },
+    expireInvitations: (roundId, occurredAt) => {
+      const round = store.redistributionRounds.find((row) => row.id === roundId);
+      if (!round) return Promise.resolve(err(notFound('Redistribution round not found.')));
+      if (occurredAt <= round.positionDeadline) {
+        return Promise.resolve(err(conflict('The invitation response window is still open.')));
+      }
+      const next: RedistributionRound = {
+        ...round,
+        invitations: round.invitations.map((row) =>
+          row.status === 'invited' ? { ...row, status: 'expired', respondedAt: occurredAt } : row,
         ),
       };
       store.redistributionRounds[store.redistributionRounds.indexOf(round)] = next;

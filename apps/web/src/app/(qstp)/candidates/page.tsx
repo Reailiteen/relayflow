@@ -1,4 +1,5 @@
 import { can } from '@relayflow/access';
+import { redirect } from 'next/navigation';
 import { getCandidateAdminView } from '@relayflow/logic';
 import { EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
@@ -26,6 +27,10 @@ export default async function CandidatesPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
+  const activeCycle = await ctx.repos.cycles.findActive();
+  if (activeCycle.ok && activeCycle.data) {
+    redirect(`/cycles/${activeCycle.data.id}/selection`);
+  }
   const result = await getCandidateAdminView(ctx, {});
 
   if (!result.ok) {

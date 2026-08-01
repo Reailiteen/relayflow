@@ -1,4 +1,5 @@
 import { ANY_STARTUP, can } from '@relayflow/access';
+import { redirect } from 'next/navigation';
 import { getStartupPools } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
@@ -29,6 +30,10 @@ export default async function StartupCandidatesPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
+  const activeCycle = await ctx.repos.cycles.findActive();
+  if (activeCycle.ok && activeCycle.data) {
+    redirect(`/startup/cycles/${activeCycle.data.id}/selection`);
+  }
   const result = await getStartupPools(ctx, {});
 
   if (!result.ok) {

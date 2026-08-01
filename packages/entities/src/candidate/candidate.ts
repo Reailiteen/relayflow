@@ -104,6 +104,7 @@ export const candidateEntity = defineEntity({
 
 /** What the candidate themselves can tell us, from the portal. */
 export const confirmAvailabilityInput = z.object({
+  cycleId,
   status: z.enum(['available', 'employed', 'not_interested', 'temporarily_unavailable']),
   note: z.string().trim().max(500).nullable().default(null),
 });

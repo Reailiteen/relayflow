@@ -48,7 +48,7 @@ const OPTIONS = [
   },
 ] as const;
 
-export function AvailabilityPrompt({ current }: { current: string }) {
+export function AvailabilityPrompt({ current, cycleId }: { current: string; cycleId: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function AvailabilityPrompt({ current }: { current: string }) {
     setError(null);
     setBusy(status);
     startTransition(async () => {
-      const result = await confirmAvailabilityAction({ status, note: null });
+      const result = await confirmAvailabilityAction({ cycleId, status, note: null });
       if (!result.ok) setError(result.message);
       setBusy(null);
     });
@@ -116,11 +116,11 @@ export function AvailabilityPrompt({ current }: { current: string }) {
 }
 
 /** Compact restatement once they have answered, with a way to change it. */
-export function AvailabilitySummary({ current }: { current: string }) {
+export function AvailabilitySummary({ current, cycleId }: { current: string; cycleId: string }) {
   const [changing, setChanging] = useState(false);
   const option = OPTIONS.find((o) => o.value === current);
 
-  if (changing) return <AvailabilityPrompt current={current} />;
+  if (changing) return <AvailabilityPrompt current={current} cycleId={cycleId} />;
 
   return (
     <Panel>

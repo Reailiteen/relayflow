@@ -3,6 +3,7 @@ import { err, notFound, ok, validation } from '@relayflow/core';
 import {
   deriveCandidatePipelineStage,
   deriveStartupCycleStage,
+  cycleId,
   effectiveDeadline,
   fitsInAllocation,
   isProtected,
@@ -495,6 +496,7 @@ export const importCandidates = defineUseCase({
   name: 'qstp.importCandidates',
 
   input: z.object({
+    cycleId,
     source: z.enum(['deema', 'csv', 'manual']),
     rows: z
       .array(
@@ -516,10 +518,10 @@ export const importCandidates = defineUseCase({
     const actor = requireActor(ctx);
     if (!actor.ok) return actor;
 
-    const cycleResult = await ctx.repos.cycles.findActive();
+    const cycleResult = await ctx.repos.cycles.findById(input.cycleId);
     if (!cycleResult.ok) return cycleResult;
     const cycle = cycleResult.data;
-    if (!cycle) return err(notFound('There is no active cycle.'));
+    if (!cycle || cycle.archivedAt) return err(notFound('Cycle not found.'));
 
     const result = await ctx.repos.candidates.importMany({
       cycleId: cycle.id,
@@ -544,6 +546,7 @@ export const sharePool = defineUseCase({
   name: 'qstp.sharePool',
 
   input: z.object({
+    cycleId,
     positionId,
     candidateIds: z.array(z.uuid()).min(1, 'Choose at least one candidate.'),
   }),
@@ -553,11 +556,11 @@ export const sharePool = defineUseCase({
   execute: async (ctx, input) => {
     const position = await ctx.repos.positions.findById(input.positionId);
     if (!position.ok) return position;
-    if (!position.data) return err(notFound('Position not found.'));
+    if (!position.data || position.data.cycleId !== input.cycleId) return err(notFound('Position not found.'));
 
     // Sharing against a role that has not been approved would let a startup
     // start interviewing for something QSTP has not agreed to fund.
-    if (position.data.status !== 'approved' && position.data.status !== 'submitted') {
+    if (!['approved', 'locked'].includes(position.data.status)) {
       return err(validation('That position is not open to receive candidates.'));
     }
 

@@ -155,6 +155,9 @@ describe('startup candidate board', () => {
 
   it('actually reserves the candidate when the card reaches Selected', async () => {
     const store = createStore();
+    // Free Acme's second AI Developer seat. The seeded Omar reservation already
+    // occupies it, and selection creation now enforces position capacity.
+    store.selections = store.selections.filter((row) => row.candidateId !== ids.canOmar);
     const ctx = contextFor(DEV_ACTORS.startupOwner(), store);
 
     const entry = await entryFor(ctx, ids.canHassan);

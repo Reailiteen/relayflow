@@ -41,7 +41,7 @@ export default async function CandidateOverviewPage() {
 
       {/* The ask comes first when there is one. */}
       {needsAvailability ? (
-        <AvailabilityPrompt current={candidate.availability} />
+        <AvailabilityPrompt current={candidate.availability} cycleId={candidate.cycleId} />
       ) : (
         overview.action && (
           <Link
@@ -105,7 +105,9 @@ export default async function CandidateOverviewPage() {
         </div>
       </Panel>
 
-      {!needsAvailability && <AvailabilitySummary current={candidate.availability} />}
+      {!needsAvailability && (
+        <AvailabilitySummary current={candidate.availability} cycleId={candidate.cycleId} />
+      )}
     </div>
   );
 }

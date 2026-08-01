@@ -1,4 +1,5 @@
 import { getStartupPositions } from '@relayflow/logic';
+import { redirect } from 'next/navigation';
 import { EmptyState, Panel } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
 import { NewPositionForm } from './_form';
@@ -7,6 +8,10 @@ export const metadata = { title: 'New position' };
 
 export default async function NewPositionPage() {
   const ctx = await getContext();
+  const activeCycle = await ctx.repos.cycles.findActive();
+  if (activeCycle.ok && activeCycle.data) {
+    redirect(`/startup/cycles/${activeCycle.data.id}/positions`);
+  }
   const result = await getStartupPositions(ctx, {});
 
   if (!result.ok) {

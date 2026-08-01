@@ -11,6 +11,7 @@ import {
   confirmDocumentFields,
   decideAllocation,
   decideException,
+  decideCycleException,
   grantHours,
   importCandidates,
   moveCandidateCard,
@@ -19,7 +20,10 @@ import {
   reclaimHours,
   attachRecording,
   requestException,
+  requestCycleException,
+  requestCycleInterview,
   saveInterviewFeedback,
+  saveCycleInterviewFeedback,
   scheduleInterview,
   resolveConflict,
   reviewPosition,
@@ -29,6 +33,8 @@ import {
   uploadDocument,
   verifyDocument,
   acknowledgeAllocation,
+  amendPlacementRequirement,
+  adjustPrioritization,
   archiveCycle,
   advanceCycleStage,
   cancelPlacement,
@@ -39,6 +45,7 @@ import {
   createRedistributionRound,
   decideRequirement,
   finalizePlacement,
+  expireRedistributionInvitations,
   inviteRedistribution,
   openCandidateChoiceFallback,
   overrideCandidateChoice,
@@ -47,6 +54,7 @@ import {
   runPrioritization,
   setPlacementReadiness,
   saveParticipation,
+  savePosition,
   saveRequirementTemplate,
   saveTaskTemplate,
   signPlacementAgreement,
@@ -57,14 +65,13 @@ import {
   respondCandidateChoiceFallback,
   respondRedistributionInvitation,
   transitionPosition,
+  transitionCycleInterview,
   updateCycle,
+  updateRequirementTemplate,
+  withdrawTask,
 } from '@relayflow/logic';
 import { action, type ActionResult } from './action';
-import {
-  DEV_ACTOR_COOKIE,
-  FIXTURE_SCENARIO_NAMES,
-  resetDevelopmentFixtures,
-} from './context';
+import { DEV_ACTOR_COOKIE, FIXTURE_SCENARIO_NAMES, resetDevelopmentFixtures } from './context';
 import { accountForEmail, accountForPersona } from './auth';
 
 /**
@@ -137,6 +144,10 @@ export async function saveInterviewFeedbackAction(input: unknown) {
   return revalidate(await action(saveInterviewFeedback)(input));
 }
 
+export async function saveCycleInterviewFeedbackAction(input: unknown) {
+  return revalidate(await action(saveCycleInterviewFeedback)(input));
+}
+
 export async function requestExceptionAction(input: unknown) {
   return revalidate(await action(requestException)(input));
 }
@@ -189,6 +200,10 @@ export async function saveParticipationAction(input: unknown) {
   return revalidate(await action(saveParticipation)(input));
 }
 
+export async function savePositionAction(input: unknown) {
+  return revalidate(await action(savePosition)(input));
+}
+
 export async function createCycleAction(input: unknown) {
   return revalidate(await action(createCycle)(input));
 }
@@ -203,6 +218,10 @@ export async function archiveCycleAction(input: unknown) {
 
 export async function runPrioritizationAction(input: unknown) {
   return revalidate(await action(runPrioritization)(input));
+}
+
+export async function adjustPrioritizationAction(input: unknown) {
+  return revalidate(await action(adjustPrioritization)(input));
 }
 
 export async function publishAllocationsAction(input: unknown) {
@@ -273,8 +292,20 @@ export async function reviewTaskAction(input: unknown) {
   return revalidate(await action(reviewTask)(input));
 }
 
+export async function withdrawTaskAction(input: unknown) {
+  return revalidate(await action(withdrawTask)(input));
+}
+
 export async function saveRequirementTemplateAction(input: unknown) {
   return revalidate(await action(saveRequirementTemplate)(input));
+}
+
+export async function amendPlacementRequirementAction(input: unknown) {
+  return revalidate(await action(amendPlacementRequirement)(input));
+}
+
+export async function updateRequirementTemplateAction(input: unknown) {
+  return revalidate(await action(updateRequirementTemplate)(input));
 }
 
 export async function submitRequirementAction(input: unknown) {
@@ -301,8 +332,28 @@ export async function closeRedistributionRoundAction(input: unknown) {
   return revalidate(await action(closeRedistributionRound)(input));
 }
 
+export async function expireRedistributionInvitationsAction(input: unknown) {
+  return revalidate(await action(expireRedistributionInvitations)(input));
+}
+
 export async function resolveSelectionConflictAction(input: unknown) {
   return revalidate(await action(resolveSelectionConflict)(input));
+}
+
+export async function requestCycleInterviewAction(input: unknown) {
+  return revalidate(await action(requestCycleInterview)(input));
+}
+
+export async function transitionCycleInterviewAction(input: unknown) {
+  return revalidate(await action(transitionCycleInterview)(input));
+}
+
+export async function requestCycleExceptionAction(input: unknown) {
+  return revalidate(await action(requestCycleException)(input));
+}
+
+export async function decideCycleExceptionAction(input: unknown) {
+  return revalidate(await action(decideCycleException)(input));
 }
 
 export async function resetFixtureScenarioAction(formData: FormData) {

@@ -2,6 +2,7 @@ import { CheckCircle2, FileText, ShieldCheck } from 'lucide-react';
 import { getStartupOnboarding } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 
 export const metadata = { title: 'Documents' };
 
@@ -27,6 +28,7 @@ const date = (iso: string) =>
  * missing feature.
  */
 export default async function StartupDocumentsPage() {
+  await redirectToActiveCycleWorkspace('startup', 'placements');
   const ctx = await getContext();
   const result = await getStartupOnboarding(ctx, {});
 

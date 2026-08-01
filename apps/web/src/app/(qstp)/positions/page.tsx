@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { getPositionTracker } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ViewSwitch } from '@/components/view-switch';
 import { PositionBoard } from './_board';
 import { PositionTable } from './_table';
@@ -28,6 +29,7 @@ export default async function PositionsPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
+  await redirectToActiveCycleWorkspace('qstp', 'positions');
   const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
   const result = await getPositionTracker(ctx, {});
 

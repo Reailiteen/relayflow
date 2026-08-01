@@ -4,6 +4,7 @@ import { totalWeeklyHours } from '@relayflow/entities';
 import { getStartupPositions } from '@relayflow/logic';
 import { Badge, EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 
 export const metadata = { title: 'Positions' };
 
@@ -21,6 +22,7 @@ const STATUS_TONE = {
 } as const;
 
 export default async function StartupPositionsPage() {
+  await redirectToActiveCycleWorkspace('startup', 'positions');
   const ctx = await getContext();
   const result = await getStartupPositions(ctx, {});
 

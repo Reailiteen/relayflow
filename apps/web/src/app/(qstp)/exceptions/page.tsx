@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { listExceptions } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ExceptionRow } from './_row';
 
 export const metadata = { title: 'Exceptions' };
@@ -14,6 +15,7 @@ export const metadata = { title: 'Exceptions' };
  * startup's allocation into the redistribution pool.
  */
 export default async function ExceptionsPage() {
+  await redirectToActiveCycleWorkspace('qstp', 'positions');
   const actor = await getActor();
   const ctx = await getContext();
   const result = await listExceptions(ctx, {});

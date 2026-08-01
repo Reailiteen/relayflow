@@ -2,6 +2,7 @@ import { can } from '@relayflow/access';
 import { listConflicts } from '@relayflow/logic';
 import { Badge, EmptyState, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ConflictCard } from './_conflict';
 
 export const metadata = { title: 'Selection' };
@@ -15,6 +16,7 @@ export const metadata = { title: 'Selection' };
  * QSTP can override, but they should have to look at the clock first.
  */
 export default async function SelectionPage() {
+  await redirectToActiveCycleWorkspace('qstp', 'selection');
   const actor = await getActor();
   const ctx = await getContext();
   const result = await listConflicts(ctx, {});

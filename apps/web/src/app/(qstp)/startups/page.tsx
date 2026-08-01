@@ -3,6 +3,7 @@ import { can } from '@relayflow/access';
 import { listStartupSummaries } from '@relayflow/logic';
 import { EmptyState, Metric, MetricBar, Panel, PanelHeader } from '@relayflow/ui-web';
 import { getActor, getContext } from '@/server/context';
+import { redirectToActiveCycleWorkspace } from '@/server/context';
 import { ViewSwitch } from '@/components/view-switch';
 import { StartupCycleBoard } from './_board';
 import { StartupTable } from './_table';
@@ -25,6 +26,7 @@ export default async function StartupsPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
+  await redirectToActiveCycleWorkspace('qstp', 'allocation');
   const [{ view }, actor, ctx] = await Promise.all([searchParams, getActor(), getContext()]);
   const result = await listStartupSummaries(ctx, {});
 
