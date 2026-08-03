@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
-    "generate:types": "supabase gen types typescript --db-url \"$SUPABASE_DB_URL\" --schema public > src/generated/database.types.ts",
+    "generate:types": "../../scripts/generate-types.sh",
     "clean": "rm -rf .turbo *.tsbuildinfo",
     "db:push": "supabase db push --db-url \"$SUPABASE_DB_URL\""
   },

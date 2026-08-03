@@ -35,6 +35,12 @@ import type {
   CandidateChoiceFallback,
   DocumentId,
   InterviewId,
+  Notification,
+  NotificationId,
+  NotificationPreference,
+  ReminderRuleConfiguration,
+  UpdatePreferenceInput,
+  UpdateReminderRuleInput,
   PoolEntryId,
   PositionId,
   UserId,
@@ -213,7 +219,7 @@ export interface RequirementPort {
   snapshotForPlacement(placementId: Placement['id'], occurredAt: string): Promise<Result<PlacementRequirement[]>>;
   listForPlacement(placementId: Placement['id']): Promise<Result<PlacementRequirement[]>>;
   amend(input: Omit<PlacementRequirement, 'id' | 'createdAt' | 'updatedAt'> & { reason: string; occurredAt: string }): Promise<Result<PlacementRequirement>>;
-  submit(input: { requirementId: PlacementRequirement['id']; fileName: string; submittedBy: UserId; extractedFields: RequirementSubmission['extractedFields']; occurredAt: string }): Promise<Result<RequirementSubmission>>;
+  submit(input: { requirementId: PlacementRequirement['id']; fileName: string; storagePath?: string | undefined; submittedBy: UserId; extractedFields: RequirementSubmission['extractedFields']; occurredAt: string }): Promise<Result<RequirementSubmission>>;
   decide(input: { requirementId: PlacementRequirement['id']; decision: 'approved' | 'correction_requested' | 'rejected' | 'expired' | 'waived'; reason: string | null; occurredAt: string }): Promise<Result<PlacementRequirement>>;
   listSubmissions(requirementId: PlacementRequirement['id']): Promise<Result<RequirementSubmission[]>>;
   sign(input: Omit<PlacementSignature, 'id'>): Promise<Result<PlacementSignature>>;
@@ -581,32 +587,94 @@ export interface DocumentPort {
   listAwaitingVerification(cycleId: CycleId): Promise<Result<CandidateDocument[]>>;
 
   /**
-   * Records an upload and whatever OCR read from it.
+   * Mints a one-time URL the browser uploads straight to.
    *
-   * Extraction is modelled as part of the write rather than a later callback
-   * because the candidate is standing there waiting: they have just taken a
-   * photo of their ID and the next screen asks them to check the fields. A real
-   * implementation queues the OCR job and moves the document to `extracting`;
-   * the contract is the same either way.
+   * The file never crosses the app server. Two reasons: a phone photo of a
+   * Qatari ID is several megabytes and Server Actions cap request bodies at one
+   * by default, and minting the URL under the caller's own credentials means
+   * the storage policy decides whether the upload is allowed at the moment the
+   * URL is created rather than after the bytes have already arrived.
+   */
+  prepareUpload(input: PrepareUploadCommand): Promise<Result<SignedUpload>>;
+
+  /** A short-lived read URL. Never stored — a URL kept on a row is a permanent
+   * bearer token for a national ID. */
+  createDownloadUrl(input: DownloadCommand): Promise<Result<string>>;
+
+  /**
+   * Records that a file arrived, and starts extraction.
+   *
+   * Extraction used to be part of this write because the fixture could invent
+   * the answer instantly. A real pass over a real document takes seconds and
+   * fails, so the two are separate now: this parks the document in
+   * `extracting`, and `recordExtraction` finishes it. A document that never
+   * gets there stays visibly mid-extraction rather than looking complete.
    */
   upload(input: UploadDocumentCommand): Promise<Result<CandidateDocument>>;
 
   /**
-   * The candidate's corrections to what OCR read.
+   * What the extractor read, or that it failed.
+   *
+   * `failed` is a first-class outcome rather than an absence: a document stuck
+   * in `extracting` looks exactly like one nobody has got to yet, and only one
+   * of those needs a person.
+   */
+  recordExtraction(input: RecordExtractionCommand): Promise<Result<CandidateDocument>>;
+
+  /**
+   * The candidate's corrections to what the extractor read.
    *
    * `extracted` is never overwritten — the confirmed value is stored alongside
-   * it, so "we read X, they corrected it to Y" stays answerable and the OCR's
-   * accuracy stays measurable.
+   * it, so "we read X, they corrected it to Y" stays answerable and the
+   * extractor's accuracy stays measurable.
    */
   confirmFields(input: ConfirmFieldsCommand): Promise<Result<CandidateDocument>>;
 
   verify(input: VerifyDocumentCommand): Promise<Result<CandidateDocument>>;
 }
 
+export interface PrepareUploadCommand {
+  readonly path: string;
+}
+
+/**
+ * Where to put the bytes, or that there is nowhere to put them.
+ *
+ * A discriminated union rather than a nullable token: the fixtures adapter has
+ * no object store, and the difference between "here is a URL" and "there is no
+ * storage here, just record the file" is a difference the caller must handle,
+ * not one it can forget. A sentinel token string would have compiled either
+ * way and sent the browser to POST at a URL that does not exist.
+ */
+export type SignedUpload =
+  | { readonly kind: 'signed'; readonly path: string; readonly token: string }
+  | { readonly kind: 'no-storage'; readonly path: string };
+
+export interface DownloadCommand {
+  readonly bucket: 'candidate-documents' | 'requirement-submissions';
+  readonly path: string;
+  readonly expiresInSeconds: number;
+}
+
 export interface UploadDocumentCommand {
   readonly documentId: DocumentId;
   readonly fileName: string;
+  readonly storagePath: string;
+  /** Set for two-sided documents. A national ID is unreadable from one side. */
+  readonly backFileName?: string | null | undefined;
+  readonly backStoragePath?: string | null | undefined;
   readonly uploadedAt: string;
+}
+
+export interface RecordExtractionCommand {
+  readonly documentId: DocumentId;
+  readonly fields: readonly {
+    key: string;
+    label: string;
+    extracted: string | null;
+    confidence: number | null;
+  }[];
+  readonly failed: boolean;
 }
 
 export interface ConfirmFieldsCommand {
@@ -621,6 +689,80 @@ export interface VerifyDocumentCommand {
   readonly rejectionReason: string | null;
   readonly verifiedBy: UserId;
   readonly verifiedAt: string;
+}
+
+/**
+ * A person's own in-app inbox.
+ *
+ * Every read and write here is scoped by `recipientId` in the *signature*, not
+ * by a filter the caller is trusted to remember. On Supabase, RLS already
+ * restricts these rows to `auth.uid()` and grants `update (read_at)` and
+ * nothing else; passing the id explicitly means the fixtures adapter enforces
+ * the same boundary rather than being the loose one.
+ *
+ * There is no `create`. Notifications are written by the reminder engine —
+ * `fanout_reminder_step`, executable only by the service role — so nothing an
+ * end user can reach may mint one. An application that could write its own
+ * notifications would be able to write someone else's.
+ */
+export interface NotificationPort {
+  /** Newest first. `unreadOnly` is a filter the adapter can push into the index. */
+  listForRecipient(
+    recipientId: UserId,
+    options?: { readonly unreadOnly?: boolean | undefined; readonly limit?: number | undefined },
+  ): Promise<Result<Notification[]>>;
+
+  countUnread(recipientId: UserId): Promise<Result<number>>;
+
+  /**
+   * Marks one notification read. Idempotent: marking an already-read row keeps
+   * the original timestamp, because "when did they first see this" is the
+   * question the column exists to answer.
+   */
+  markRead(
+    id: NotificationId,
+    recipientId: UserId,
+    readAt: string,
+  ): Promise<Result<Notification>>;
+
+  /** Returns how many rows this actually changed, not how many exist. */
+  markAllRead(recipientId: UserId, readAt: string): Promise<Result<number>>;
+}
+
+/**
+ * The safe half of a reminder rule.
+ *
+ * There is no `create` and no `delete`. Rules are code-owned — the predicate
+ * lives in SQL next to the tables it reads — and this port only ever adjusts
+ * one that already exists. A port that could mint a rule would need a way to
+ * express a predicate, and a settings screen that can express a predicate is a
+ * settings screen that can express a wrong one.
+ */
+export interface ReminderRulePort {
+  /** Every stored configuration: the global rows and one cycle's overrides. */
+  listConfigurations(cycleId: CycleId | null): Promise<Result<ReminderRuleConfiguration[]>>;
+  /** Upsert on (rule, cycle). Absent means "running on the code defaults". */
+  saveConfiguration(
+    input: UpdateReminderRuleInput & { updatedBy: UserId; occurredAt: string },
+  ): Promise<Result<ReminderRuleConfiguration>>;
+}
+
+/**
+ * One person's own channel choices, and the endpoints they can be reached on.
+ *
+ * Scoped by `userId` in the signature rather than by a filter the caller is
+ * trusted to remember — the same shape as `NotificationPort`, and for the same
+ * reason.
+ */
+export interface NotificationPreferencePort {
+  listForUser(userId: UserId): Promise<Result<NotificationPreference[]>>;
+  savePreference(
+    userId: UserId,
+    input: UpdatePreferenceInput,
+  ): Promise<Result<NotificationPreference>>;
+  /** Mobile. Removing is as important as adding: a stale token bounces forever. */
+  registerPushToken(userId: UserId, token: string, platform: string): Promise<Result<void>>;
+  removePushToken(userId: UserId, token: string): Promise<Result<void>>;
 }
 
 /** The single object use-cases receive. Adapters return one of these. */
@@ -645,4 +787,7 @@ export interface Repositories {
   readonly recovery: RecoveryPort;
   readonly conflicts: ConflictPort;
   readonly fallbacks: FallbackPort;
+  readonly notifications: NotificationPort;
+  readonly reminderRules: ReminderRulePort;
+  readonly notificationPreferences: NotificationPreferencePort;
 }

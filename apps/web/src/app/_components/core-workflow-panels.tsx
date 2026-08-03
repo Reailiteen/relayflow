@@ -23,7 +23,6 @@ import type {
   Interview,
   Placement,
   PlacementRequirement,
-  PlacementSignature,
   PoolEntry,
   Position,
   PrioritizationRun,
@@ -36,6 +35,7 @@ import type {
   TaskAssignment,
   TaskTemplate,
 } from "@relayflow/entities";
+import { AGREEMENT_TITLES } from "@relayflow/entities";
 import {
   Badge,
   Button,
@@ -74,7 +74,6 @@ import {
   saveTaskTemplateAction,
   saveCycleInterviewFeedbackAction,
   setPlacementReadinessAction,
-  signPlacementAgreementAction,
   sharePoolAction,
   submitRequirementAction,
   submitTaskAction,
@@ -2754,41 +2753,44 @@ const AGREEMENT_LABELS = {
   candidate_agreement: "Candidate agreement",
 } as const;
 
-const AGREEMENT_PARTIES = (
-  Object.keys(AGREEMENT_LABELS) as (keyof typeof AGREEMENT_LABELS)[]
-).map((kind) => ({ kind, label: AGREEMENT_LABELS[kind] }));
+const AGREEMENT_PARTIES = (["qstp", "startup", "candidate"] as const).map(
+  (owner) => ({
+    owner,
+    title: AGREEMENT_TITLES[owner],
+    label: AGREEMENT_LABELS[`${owner}_agreement`],
+  }),
+);
 
 export function PlacementWorkflowPanel({
   cycleId,
   placement,
-  signatures,
+  requirements,
   portal,
   readOnly = false,
   blockers = [],
 }: {
   cycleId: CycleId;
   placement: Placement;
-  signatures: readonly PlacementSignature[];
+  requirements: readonly PlacementRequirement[];
   portal: Portal;
   readOnly?: boolean | undefined;
   blockers?: readonly string[] | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
-  const [signer, setSigner] = useState("");
-  const [openedAt, setOpenedAt] = useState<string | null>(null);
-  const [accepted, setAccepted] = useState(false);
   const action = usePanelAction();
-  const agreementKind = readOnly
+
+  // Which agreement is this reader's to return. Agreements are ordinary
+  // document requirements since 0017 — issued by QSTP, signed on paper,
+  // uploaded back — so the panel points at the checklist rather than offering
+  // a checkbox that would prove only that somebody clicked.
+  const ownAgreement = readOnly
     ? null
     : portal === "qstp"
-      ? "qstp_agreement"
+      ? AGREEMENT_TITLES.qstp
       : portal === "startup"
-        ? "startup_agreement"
-        : "candidate_agreement";
-  const signed = agreementKind
-    ? signatures.some((row) => row.kind === agreementKind)
-    : false;
+        ? AGREEMENT_TITLES.startup
+        : AGREEMENT_TITLES.candidate;
   return (
     <SidePanel open={open} onOpenChange={setOpen}>
       <Button size="xs" variant="secondary" onClick={() => setOpen(true)}>
@@ -2856,67 +2858,36 @@ export function PlacementWorkflowPanel({
               <Signature className="size-4 text-accent" />
               <p className="text-sm font-bold text-ink">Agreements</p>
             </div>
-            {AGREEMENT_PARTIES.map(({ kind, label }) => {
-              const row = signatures.find((item) => item.kind === kind);
+            <p className="text-xs text-ink-3">
+              Each party downloads the agreement, signs it, and uploads the signed
+              copy on their documents page. The returned file is the record.
+            </p>
+            {AGREEMENT_PARTIES.map(({ owner, title, label }) => {
+              const row = requirements.find((item) => item.title === title);
+              const settled =
+                row !== undefined && ["approved", "waived"].includes(row.status);
               return (
                 <div
-                  key={kind}
+                  key={owner}
                   className="flex items-center justify-between gap-3 rounded-control bg-surface-sunken px-4 py-2.5"
                 >
                   <div className="min-w-0">
                     <p className="text-sm text-ink-2">{label}</p>
-                    {row ? (
+                    {!settled && title === ownAgreement ? (
+                      <p className="text-xs text-ink-3">Yours to sign and return.</p>
+                    ) : !settled && row ? (
                       <p className="truncate text-xs text-ink-3">
-                        {row.signerName} · {row.signedAt}
+                        {row.status.replaceAll("_", " ")}
                       </p>
-                    ) : kind === agreementKind ? (
-                      <p className="text-xs text-ink-3">Yours to sign.</p>
                     ) : null}
                   </div>
-                  <Badge tone={row ? "positive" : "warning"}>
-                    {row ? "Signed" : "Outstanding"}
+                  <Badge tone={settled ? "positive" : "warning"}>
+                    {settled ? "Returned" : "Outstanding"}
                   </Badge>
                 </div>
               );
             })}
           </section>
-          {agreementKind && !signed && placement.status !== "cancelled" ? (
-            <section className="space-y-3 border-t border-hairline pt-5">
-              <p className="text-sm font-bold text-ink">
-                Sign the {AGREEMENT_LABELS[agreementKind].toLowerCase()}
-              </p>
-              {openedAt ? (
-                <div className="max-h-36 overflow-y-auto rounded-control border border-hairline bg-surface-sunken p-4 text-xs leading-5 text-ink-2">
-                  Fixture agreement for placement {placement.id}. The signer
-                  confirms the stated dates, weekly hours, supervision, and
-                  programme obligations. This is a workflow simulation and not a
-                  generated legal document.
-                </div>
-              ) : (
-                <Button onClick={() => setOpenedAt(new Date().toISOString())}>
-                  Open agreement
-                </Button>
-              )}
-              {openedAt ? (
-                <>
-                  <TextField
-                    label="Signer name"
-                    value={signer}
-                    onChange={(event) => setSigner(event.target.value)}
-                  />
-                  <label className="flex items-start gap-3 text-sm text-ink-2">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={accepted}
-                      onChange={(event) => setAccepted(event.target.checked)}
-                    />
-                    I have opened the agreement and accept the declaration.
-                  </label>
-                </>
-              ) : null}
-            </section>
-          ) : null}
           {!readOnly &&
           placement.status !== "cancelled" &&
           portal === "qstp" ? (
@@ -2942,25 +2913,6 @@ export function PlacementWorkflowPanel({
           </SidePanelClose>
           {!readOnly && placement.status !== "cancelled" ? (
             <div className="flex flex-wrap gap-2">
-              {agreementKind && !signed && openedAt ? (
-                <Button
-                  disabled={action.pending || !accepted || !signer.trim()}
-                  onClick={() =>
-                    action.run(() =>
-                      signPlacementAgreementAction({
-                        cycleId,
-                        placementId: placement.id,
-                        kind: agreementKind,
-                        signerName: signer,
-                        declarationAccepted: true,
-                        documentOpenedAt: openedAt,
-                      }),
-                    )
-                  }
-                >
-                  Sign agreement
-                </Button>
-              ) : null}
               {portal === "candidate" && !placement.candidateReadyAt ? (
                 <Button
                   variant="primary"

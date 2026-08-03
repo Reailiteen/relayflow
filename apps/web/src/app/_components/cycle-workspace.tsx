@@ -5,6 +5,10 @@ import {
   type Cycle,
   type PlacementRequirement,
 } from '@relayflow/entities';
+import { AGREEMENT_TITLES } from '@relayflow/entities';
+
+/** The three agreement requirement titles, for telling them from ordinary documents. */
+const AGREEMENT_LIST: readonly string[] = Object.values(AGREEMENT_TITLES);
 import type { CycleWorkspace as CycleWorkspaceData } from '@relayflow/logic';
 import {
   Badge,
@@ -1191,13 +1195,22 @@ export function CycleWorkspaceView({
                 </ul>
                 <div className="flex items-center justify-between gap-3 border-t border-hairline p-5">
                   <p className="text-xs text-ink-3">
-                    {data.signatures.filter((row) => row.placementId === placement.id).length}/3
-                    agreements signed
+                    {
+                      data.requirements.filter(
+                        (row) =>
+                          row.placementId === placement.id &&
+                          AGREEMENT_LIST.includes(row.title) &&
+                          ['approved', 'waived'].includes(row.status),
+                      ).length
+                    }
+                    /3 agreements returned
                   </p>
                   <PlacementWorkflowPanel
                     cycleId={data.cycle.id}
                     placement={placement}
-                    signatures={data.signatures.filter((row) => row.placementId === placement.id)}
+                    requirements={data.requirements.filter(
+                      (row) => row.placementId === placement.id,
+                    )}
                     portal={portal}
                     readOnly={
                       placement.status === 'cancelled' ||

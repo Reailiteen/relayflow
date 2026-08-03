@@ -3,7 +3,8 @@ import { isStartup } from '@relayflow/access';
 import { getStartupHome } from '@relayflow/logic';
 import { getActor, getContext } from '@/server/context';
 import { RailProvider } from '@/app/_components/rail';
-import { AccountMenu, Notifications } from '@/app/_components/account';
+import { AccountMenu } from '@/app/_components/account';
+import { NotificationBell } from '@/app/_components/notifications';
 import { TopBar, Workspace } from '@/app/_components/shell';
 import { StartupHeading, StartupNavToggle, StartupSidebar } from './_components/nav';
 import { PortalSwitcher } from './_components/portal-switcher';
@@ -30,11 +31,6 @@ export default async function StartupLayout({ children }: { children: React.Reac
   const activeCycle = await ctx.repos.cycles.findActive();
   const cycleId = activeCycle.ok && activeCycle.data ? activeCycle.data.id : 'c1c1e000-0000-4000-8000-000000000001';
 
-  // The bell counts what is genuinely sitting in this startup's court: people
-  // to review and interviews to run. The single "next action" is not added to
-  // it — that is a recommendation about the same work, not more work.
-  const waiting = home.ok ? home.data.candidatesAwaitingReview + home.data.interviewsPending : 0;
-
   return (
     <RailProvider>
       <div className="flex h-dvh bg-canvas">
@@ -47,7 +43,7 @@ export default async function StartupLayout({ children }: { children: React.Reac
 
             <div className="ml-auto flex items-center gap-4">
               <PortalSwitcher />
-              <Notifications count={waiting} />
+              <NotificationBell centerHref="/startup/notifications" />
               <AccountMenu name={actor.fullName} detail={startupName} />
             </div>
           </TopBar>

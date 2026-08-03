@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { asId } from '@relayflow/core';
 import {
+  AGREEMENT_TITLES,
   committedPlacementHours,
   effectiveHours,
   evaluateStageGate,
@@ -10,6 +11,14 @@ import {
   type PrioritizationOutcome,
   type PrioritizationOutcomeStatus,
 } from '..';
+
+/** All three agreements returned signed — the readiness baseline. */
+const signedAgreements = () =>
+  Object.values(AGREEMENT_TITLES).map((title) => ({
+    required: true,
+    status: 'approved' as const,
+    title,
+  }));
 
 const cycleId = asId<'CycleId'>('c1c1e000-0000-4000-8000-000000000001');
 
@@ -107,13 +116,9 @@ describe('fixture-backed operations domain', () => {
     const blockers = placementReadinessBlockers({
       active: true,
       requirements: [
-        { required: true, status: 'approved' },
-        { required: true, status: 'awaiting_upload' },
-      ],
-      signatures: [
-        { kind: 'qstp_agreement' },
-        { kind: 'startup_agreement' },
-        { kind: 'candidate_agreement' },
+        ...signedAgreements(),
+        { required: true, status: 'approved', title: 'Passport' },
+        { required: true, status: 'awaiting_upload', title: 'Bank details' },
       ],
       candidateReady: true,
       startupReady: true,
@@ -125,10 +130,9 @@ describe('fixture-backed operations domain', () => {
     expect(blockers).toContain('Required documents are incomplete.');
   });
 
-  it('blocks readiness until the candidate has signed, not just QSTP and the startup', () => {
+  it('blocks readiness until the candidate has returned a signed agreement too', () => {
     const facts = {
       active: true,
-      requirements: [{ required: true, status: 'approved' as const }],
       candidateReady: true,
       startupReady: true,
       detailsFinal: true,
@@ -136,25 +140,60 @@ describe('fixture-backed operations domain', () => {
       unresolvedConflict: false,
       unresolvedException: false,
     };
-    // Confirming readiness is not signing. A candidate who has ticked "I am
-    // ready" has still not agreed to the terms, and conflating the two would let
-    // a placement go live on two signatures.
+
+    // Confirming readiness is not agreeing. A candidate who has ticked "I am
+    // ready" has still not signed anything, and conflating the two would let a
+    // placement go live on two agreements.
     expect(
       placementReadinessBlockers({
         ...facts,
-        signatures: [{ kind: 'qstp_agreement' }, { kind: 'startup_agreement' }],
+        requirements: signedAgreements().filter(
+          (row) => row.title !== AGREEMENT_TITLES.candidate,
+        ),
       }),
-    ).toEqual(['Candidate agreement is unsigned.']);
+    ).toEqual(['Candidate agreement is not signed and returned.']);
+
     expect(
-      placementReadinessBlockers({
-        ...facts,
-        signatures: [
-          { kind: 'qstp_agreement' },
-          { kind: 'startup_agreement' },
-          { kind: 'candidate_agreement' },
-        ],
-      }),
+      placementReadinessBlockers({ ...facts, requirements: signedAgreements() }),
     ).toEqual([]);
+  });
+
+  it('names which agreement is outstanding rather than lumping them together', () => {
+    // "A required document is incomplete" sends somebody hunting through a
+    // checklist for which one; naming it is the difference between a blocker
+    // they can act on and one they have to go looking for.
+    const blockers = placementReadinessBlockers({
+      active: true,
+      requirements: [],
+      candidateReady: true,
+      startupReady: true,
+      detailsFinal: true,
+      qstpApproved: true,
+      unresolvedConflict: false,
+      unresolvedException: false,
+    });
+    expect(blockers).toEqual([
+      'QSTP agreement is not signed and returned.',
+      'Startup agreement is not signed and returned.',
+      'Candidate agreement is not signed and returned.',
+    ]);
+  });
+
+  it('treats a waived agreement as settled', () => {
+    // Waiving is a decision somebody made and recorded, not an omission.
+    const blockers = placementReadinessBlockers({
+      active: true,
+      requirements: signedAgreements().map((row) =>
+        row.title === AGREEMENT_TITLES.startup ? { ...row, status: 'waived' as const } : row,
+      ),
+      candidateReady: true,
+      startupReady: true,
+      detailsFinal: true,
+      qstpApproved: true,
+      unresolvedConflict: false,
+      unresolvedException: false,
+    });
+    expect(blockers).toEqual([]);
   });
 
   it('requires a reason to override warnings but never permits blocker overrides', () => {

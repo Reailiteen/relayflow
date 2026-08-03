@@ -20,5 +20,8 @@ export * from './startup/onboarding';
 export * from './candidate/views';
 export * from './candidate/actions';
 
+export * from './notifications/inbox';
+export * from './notifications/settings';
+
 export * from './board/moves';
 export * from './operations/core-system';

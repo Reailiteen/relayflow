@@ -1,6 +1,15 @@
-// Drains RelayFlow's queued email, Slack and push deliveries. This hackathon
-// deployment is intentionally callable without JWT or a custom worker secret.
-// Restore caller authentication before using it with real participant data.
+// Drains RelayFlow's queued email, Slack and push deliveries.
+//
+// Deployed with `--no-verify-jwt`, because the caller is pg_cron rather than a
+// signed-in person and there is no JWT to verify. That makes the shared secret
+// below the only thing standing between this URL and anyone who finds it — and
+// what they could do with it is not nothing: drain the queue, burn the Resend
+// quota, and mark deliveries sent that nobody received.
+//
+//   supabase secrets set WORKER_SHARED_SECRET="$(openssl rand -hex 32)"
+//   supabase functions deploy process-notifications --no-verify-jwt
+//   -- then, once, against the database:
+//   select schedule_notification_worker('https://…/process-notifications', '<same value>');
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendEmails } from "./channels/email.ts";
@@ -17,12 +26,46 @@ const json = (payload: unknown, status = 200) =>
 const backoffMilliseconds = (attempts: number): number =>
   Math.min(2 ** attempts, 60) * 60_000;
 
-Deno.serve(async () => {
+/**
+ * Constant-time comparison.
+ *
+ * `a === b` on strings returns as soon as two bytes differ, and the time it
+ * took is a measurement of how much of the secret was right. That is a real
+ * attack on a value an attacker can submit as often as they like.
+ */
+function secretMatches(provided: string, expected: string): boolean {
+  const a = new TextEncoder().encode(provided);
+  const b = new TextEncoder().encode(expected);
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+Deno.serve(async (request: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const workerSecret = Deno.env.get("WORKER_SHARED_SECRET");
 
   if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: "notification worker is not configured" }, 503);
+  }
+
+  // Refusing to run unauthenticated rather than defaulting to open. An
+  // unconfigured secret is a deployment that is not finished, and the honest
+  // failure is a 503 that says so — not a queue anyone can drain because
+  // somebody forgot a step.
+  if (!workerSecret) {
+    return json({ error: "notification worker is not configured" }, 503);
+  }
+
+  const provided = request.headers.get("x-worker-secret") ?? "";
+  if (!secretMatches(provided, workerSecret)) {
+    // Deliberately says nothing about why. "Wrong secret" and "no secret" are
+    // the same answer to someone probing.
+    return json({ error: "not permitted" }, 401);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {

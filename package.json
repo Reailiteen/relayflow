@@ -17,11 +17,16 @@
     "verify": "turbo run typecheck lint test build",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml,sql}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml,sql}\"",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "seed:hosted": "tsx scripts/seed-hosted.ts",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json"
   },
   "devDependencies": {
     "@relayflow/config": "workspace:*",
+    "@relayflow/data": "workspace:*",
+    "@relayflow/fixtures": "workspace:*",
     "prettier": "catalog:",
+    "tsx": "^4.20.3",
     "turbo": "^2.5.8",
     "typescript": "catalog:"
   }

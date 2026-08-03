@@ -357,10 +357,25 @@ export interface PlacementSignature {
   readonly signedAt: string;
 }
 
+/**
+ * Which agreement a requirement is, if it is one.
+ *
+ * Agreements are ordinary document requirements since 0017 — QSTP issues one,
+ * each party downloads it, signs it on paper and uploads the signed copy back.
+ * They are singled out here only so the readiness list can say "the startup
+ * agreement is unsigned" rather than "a required document is incomplete",
+ * which is the difference between a blocker somebody can act on and one they
+ * have to go looking for.
+ */
+export const AGREEMENT_TITLES: Readonly<Record<RequirementOwner, string>> = {
+  qstp: 'QSTP placement agreement',
+  startup: 'Startup placement agreement',
+  candidate: 'Candidate placement agreement',
+};
+
 export interface PlacementReadinessFacts {
   readonly active: boolean;
-  readonly requirements: readonly Pick<PlacementRequirement, 'required' | 'status'>[];
-  readonly signatures: readonly Pick<PlacementSignature, 'kind'>[];
+  readonly requirements: readonly Pick<PlacementRequirement, 'required' | 'status' | 'title'>[];
   readonly candidateReady: boolean;
   readonly startupReady: boolean;
   readonly detailsFinal: boolean;
@@ -369,16 +384,31 @@ export interface PlacementReadinessFacts {
   readonly unresolvedException: boolean;
 }
 
+const SETTLED: readonly string[] = ['approved', 'waived'];
+
 export function placementReadinessBlockers(facts: PlacementReadinessFacts): string[] {
   const blockers: string[] = [];
   if (!facts.active) blockers.push('Placement is not active.');
-  if (facts.requirements.some((row) => row.required && !['approved', 'waived'].includes(row.status))) {
+
+  const agreements = new Set<string>(Object.values(AGREEMENT_TITLES));
+  const settled = new Set(
+    facts.requirements.filter((row) => SETTLED.includes(row.status)).map((row) => row.title),
+  );
+
+  // Named individually, because "a required document is incomplete" sends
+  // somebody hunting through a checklist for which one.
+  for (const [owner, title] of Object.entries(AGREEMENT_TITLES)) {
+    if (!settled.has(title)) blockers.push(`${label(owner)} agreement is not signed and returned.`);
+  }
+
+  if (
+    facts.requirements.some(
+      (row) => row.required && !SETTLED.includes(row.status) && !agreements.has(row.title),
+    )
+  ) {
     blockers.push('Required documents are incomplete.');
   }
-  const signatureKinds = new Set(facts.signatures.map((row) => row.kind));
-  if (!signatureKinds.has('qstp_agreement')) blockers.push('QSTP agreement is unsigned.');
-  if (!signatureKinds.has('startup_agreement')) blockers.push('Startup agreement is unsigned.');
-  if (!signatureKinds.has('candidate_agreement')) blockers.push('Candidate agreement is unsigned.');
+
   if (!facts.candidateReady) blockers.push('Candidate readiness is unconfirmed.');
   if (!facts.startupReady) blockers.push('Startup readiness is unconfirmed.');
   if (!facts.detailsFinal) blockers.push('Placement dates, hours, and supervisor are not final.');
@@ -387,6 +417,8 @@ export function placementReadinessBlockers(facts: PlacementReadinessFacts): stri
   if (facts.unresolvedException) blockers.push('An exception is unresolved.');
   return blockers;
 }
+
+const label = (owner: string) => (owner === 'qstp' ? 'QSTP' : owner[0]?.toUpperCase() + owner.slice(1));
 
 export type RecoveryStatus =
   | 'potential'

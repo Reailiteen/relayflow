@@ -6,6 +6,7 @@ import type {
   Cycle,
   ExceptionRequest,
   Interview,
+  Notification,
   PoolEntry,
   Position,
   Selection,
@@ -591,8 +592,15 @@ export const documents: CandidateDocument[] = [
     startupId: null,
     kind: 'national_id',
     status: 'verified',
+    // Paths carry the candidate uuid, not a slug. The storage policy in 0014
+    // decides by reading the id out of `(storage.foldername(name))[2]`, so a
+    // readable-but-wrong path is a document nobody can open.
     fileName: 'qid-front.jpg',
-    storagePath: 'candidates/layla/qid-front.jpg',
+    storagePath: `candidates/${ids.canLayla}/d0c00e07-0000-4000-8000-000000000001/qid-front.jpg`,
+    // A Qatari ID is unreadable from one side: the number is on the front and
+    // the expiry on the back.
+    backFileName: 'qid-back.jpg',
+    backStoragePath: `candidates/${ids.canLayla}/d0c00e07-0000-4000-8000-000000000001/back-qid-back.jpg`,
     fields: [
       { key: 'id_number', label: 'ID number', extracted: '28912345678', confirmed: '28912345678', confidence: 0.97 },
       { key: 'full_name', label: 'Full name', extracted: 'Layla Ahmed', confirmed: 'Layla Ahmed', confidence: 0.95 },
@@ -611,7 +619,9 @@ export const documents: CandidateDocument[] = [
     kind: 'bank_statement',
     status: 'submitted',
     fileName: 'bank-statement.pdf',
-    storagePath: 'candidates/layla/bank-statement.pdf',
+    storagePath: `candidates/${ids.canLayla}/d0c00e07-0000-4000-8000-000000000002/bank-statement.pdf`,
+    backFileName: null,
+    backStoragePath: null,
     fields: [
       // Low confidence on the IBAN: exactly the field that must not be
       // auto-trusted, and the reason candidates confirm before QSTP verifies.
@@ -633,6 +643,8 @@ export const documents: CandidateDocument[] = [
     status: 'requested',
     fileName: null,
     storagePath: null,
+    backFileName: null,
+    backStoragePath: null,
     fields: [],
     rejectionReason: null,
     verifiedBy: null,
@@ -640,4 +652,127 @@ export const documents: CandidateDocument[] = [
     createdAt: T('2026-03-15T10:05:00.000Z'),
     updatedAt: T('2026-03-15T10:05:00.000Z'),
   },
+];
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+/**
+ * The in-app inbox, seeded from what this cycle has actually done to people.
+ *
+ * Every row here corresponds to something else in this file — the passed
+ * selection deadline, Northwind's pending exception, the conflict over Omar,
+ * Layla's outstanding bank statement — so opening a notification lands on a
+ * screen that agrees with it. Notifications invented independently of the data
+ * are how a demo ends up linking to an empty page.
+ *
+ * All six categories appear, and both read and unread states, because the bell
+ * and the notification centre have to be judged against a realistic mix rather
+ * than against six identical unread rows.
+ */
+const notification = (
+  hex: string,
+  values: Omit<Notification, 'id'>,
+): Notification => ({ id: id<'NotificationId'>(hex), ...values });
+
+export const notifications: Notification[] = [
+  notification('4071f100-0000-4000-8000-000000000001', {
+    recipientId: ids.qstpManager,
+    category: 'deadline',
+    title: 'Candidate selection deadline has passed',
+    body: 'Three startups had not selected anyone when the deadline closed on 14 March. Their hours are now reclaimable.',
+    route: `/cycles/${ids.cycle}/selection`,
+    mandatory: true,
+    readAt: null,
+    createdAt: T('2026-03-15T00:05:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000002', {
+    recipientId: ids.qstpManager,
+    category: 'exception',
+    title: 'Northwind Analytics asked for more time',
+    body: 'An extension to 21 March has been requested for candidate selection. Nothing is protected until it is approved.',
+    route: '/exceptions',
+    mandatory: false,
+    readAt: null,
+    createdAt: T('2026-03-15T08:20:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000003', {
+    recipientId: ids.qstpOps,
+    category: 'selection',
+    title: 'Two startups have claimed the same candidate',
+    body: 'Northwind selected Omar Al-Kuwari, who is already reserved by Acme Robotics. The claim is blocked until this is resolved.',
+    route: '/selection',
+    mandatory: false,
+    readAt: null,
+    createdAt: T('2026-03-12T11:02:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000004', {
+    recipientId: ids.qstpOps,
+    category: 'onboarding',
+    title: 'A bank statement is waiting for verification',
+    body: 'Layla Ahmed confirmed her IBAN after a low-confidence read. It needs a human check before payroll.',
+    route: '/documents',
+    mandatory: false,
+    readAt: null,
+    createdAt: T('2026-03-15T10:12:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000005', {
+    recipientId: ids.qstpOps,
+    category: 'system',
+    title: 'Nightly reminder run finished',
+    body: '14 reminders were sent and 2 were held back because their recipients had opted out of email.',
+    route: null,
+    mandatory: false,
+    readAt: T('2026-03-16T07:40:00.000Z'),
+    createdAt: T('2026-03-16T02:00:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000006', {
+    recipientId: ids.acmeOwner,
+    category: 'selection',
+    title: 'Your claim on Omar Al-Kuwari is being contested',
+    body: 'Northwind Analytics tried to select the same candidate. QSTP is deciding; you do not need to do anything yet.',
+    route: `/startup/cycles/${ids.cycle}/selection`,
+    mandatory: false,
+    readAt: null,
+    createdAt: T('2026-03-12T11:05:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000007', {
+    recipientId: ids.acmeOwner,
+    category: 'candidate',
+    title: 'Layla Ahmed accepted the AI Engineering Intern role',
+    body: 'She is now working through onboarding documents. You will be told when she is cleared to start.',
+    route: '/startup/candidates',
+    mandatory: false,
+    readAt: T('2026-03-14T09:30:00.000Z'),
+    createdAt: T('2026-03-13T16:45:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000008', {
+    recipientId: ids.northwindOwner,
+    category: 'deadline',
+    title: 'You have not selected any candidates',
+    body: 'The selection deadline passed on 14 March. Your 40 weekly hours are at risk unless your exception is approved.',
+    route: `/startup/cycles/${ids.cycle}/selection`,
+    mandatory: true,
+    readAt: null,
+    createdAt: T('2026-03-15T00:05:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000009', {
+    recipientId: ids.candidateUser,
+    category: 'onboarding',
+    title: 'Two documents are still needed',
+    body: 'Your bank statement is being checked, and Acme Robotics has asked you to sign an NDA.',
+    route: '/candidate/documents',
+    mandatory: true,
+    readAt: null,
+    createdAt: T('2026-03-15T10:06:00.000Z'),
+  }),
+  notification('4071f100-0000-4000-8000-000000000010', {
+    recipientId: ids.candidateUser,
+    category: 'candidate',
+    title: 'Acme Robotics confirmed your placement',
+    body: 'You start on 1 April, 20 hours a week, supervised by Khalid Al-Mansouri.',
+    route: '/candidate',
+    mandatory: false,
+    readAt: T('2026-03-14T07:15:00.000Z'),
+    createdAt: T('2026-03-13T17:00:00.000Z'),
+  }),
 ];

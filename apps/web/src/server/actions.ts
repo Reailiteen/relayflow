@@ -14,6 +14,10 @@ import {
   decideCycleException,
   grantHours,
   importCandidates,
+  markAllNotificationsRead,
+  updateNotificationPreference,
+  updateReminderRule,
+  markNotificationRead,
   moveCandidateCard,
   movePositionCard,
   moveStartupCard,
@@ -31,6 +35,9 @@ import {
   selectCandidate,
   submitPosition,
   uploadDocument,
+  prepareDocumentUpload,
+  getDocumentDownloadUrl,
+  recordDocumentExtraction,
   verifyDocument,
   acknowledgeAllocation,
   amendPlacementRequirement,
@@ -60,7 +67,6 @@ import {
   savePosition,
   saveRequirementTemplate,
   saveTaskTemplate,
-  signPlacementAgreement,
   submitRequirement,
   submitTask,
   reviewTask,
@@ -151,6 +157,37 @@ export async function saveCycleInterviewFeedbackAction(input: unknown) {
   return revalidate(await action(saveCycleInterviewFeedback)(input));
 }
 
+/**
+ * Reading a notification.
+ *
+ * Revalidating the whole layout is what keeps the bell badge, the dropdown and
+ * the notification page from disagreeing after a click — they are three
+ * renderings of one count, and none of them holds its own copy.
+ */
+export async function markNotificationReadAction(input: unknown) {
+  return revalidate(await action(markNotificationRead)(input));
+}
+
+export async function markAllNotificationsReadAction(input: unknown) {
+  return revalidate(await action(markAllNotificationsRead)(input));
+}
+
+/**
+ * Reminder settings.
+ *
+ * Both revalidate the layout rather than the settings page alone: turning a
+ * rule off changes what the whole application will say from now on, and a
+ * cached panel elsewhere still promising the old behaviour is exactly the kind
+ * of disagreement that makes people distrust the switch.
+ */
+export async function updateReminderRuleAction(input: unknown) {
+  return revalidate(await action(updateReminderRule)(input));
+}
+
+export async function updateNotificationPreferenceAction(input: unknown) {
+  return revalidate(await action(updateNotificationPreference)(input));
+}
+
 export async function requestExceptionAction(input: unknown) {
   return revalidate(await action(requestException)(input));
 }
@@ -181,6 +218,30 @@ export async function moveCandidateCardAction(input: unknown) {
 
 export async function confirmAvailabilityAction(input: unknown) {
   return revalidate(await action(confirmAvailability)(input));
+}
+
+/**
+ * Uploading, in two calls.
+ *
+ * The first mints a URL the browser PUTs to directly; the second records that
+ * the file arrived. Splitting them is what keeps several megabytes of ID photo
+ * off the Next server — and, more importantly, means the storage policy decides
+ * whether the write is allowed before any of those megabytes move.
+ *
+ * Neither takes a storage path. Both compute the same one from ids the server
+ * already holds, so there is no request in which a candidate can name a folder.
+ */
+export async function prepareDocumentUploadAction(input: unknown) {
+  // Deliberately not revalidated: nothing has changed yet.
+  return action(prepareDocumentUpload)(input);
+}
+
+export async function documentDownloadUrlAction(input: unknown) {
+  return action(getDocumentDownloadUrl)(input);
+}
+
+export async function recordDocumentExtractionAction(input: unknown) {
+  return revalidate(await action(recordDocumentExtraction)(input));
 }
 
 export async function uploadDocumentAction(input: unknown) {
@@ -329,10 +390,6 @@ export async function submitRequirementAction(input: unknown) {
 
 export async function decideRequirementAction(input: unknown) {
   return revalidate(await action(decideRequirement)(input));
-}
-
-export async function signPlacementAgreementAction(input: unknown) {
-  return revalidate(await action(signPlacementAgreement)(input));
 }
 
 export async function protectRecoveryAction(input: unknown) {

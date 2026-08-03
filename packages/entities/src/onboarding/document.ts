@@ -45,6 +45,11 @@ export const DOCUMENT_STATUSES = [
 export const documentStatus = z.enum(DOCUMENT_STATUSES);
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
+/** Kinds that need both sides before anybody can read them. */
+export function isTwoSided(kind: DocumentKind): boolean {
+  return kind === 'national_id';
+}
+
 /** Whether the candidate still has something to do with this document. */
 export function needsCandidateAction(status: DocumentStatus): boolean {
   return status === 'requested' || status === 'awaiting_candidate_review' || status === 'rejected';
@@ -100,6 +105,15 @@ export interface CandidateDocument {
   readonly status: DocumentStatus;
   readonly fileName: string | null;
   readonly storagePath: string | null;
+  /**
+   * The reverse side, for kinds that have one.
+   *
+   * A Qatari ID is unreadable from one side — the number is on the front and
+   * the expiry on the back — so it is one document with two images rather than
+   * two documents that can drift apart, one verified and one not.
+   */
+  readonly backFileName: string | null;
+  readonly backStoragePath: string | null;
   readonly fields: readonly ExtractedField[];
   readonly rejectionReason: string | null;
   readonly verifiedBy: UserId | null;
@@ -116,6 +130,8 @@ export const documentRow = z.object({
   status: documentStatus,
   file_name: z.string().max(300).nullable(),
   storage_path: z.string().max(500).nullable(),
+  back_file_name: z.string().max(300).nullable().default(null),
+  back_storage_path: z.string().max(500).nullable().default(null),
   fields: z.array(extractedField),
   rejection_reason: z.string().nullable(),
   verified_by: userId.nullable(),
@@ -134,6 +150,8 @@ export const documentEntity = defineEntity({
     status: row.status,
     fileName: row.file_name,
     storagePath: row.storage_path,
+    backFileName: row.back_file_name,
+    backStoragePath: row.back_storage_path,
     fields: row.fields,
     rejectionReason: row.rejection_reason,
     verifiedBy: row.verified_by,
@@ -142,6 +160,46 @@ export const documentEntity = defineEntity({
     updatedAt: row.updated_at,
   }),
 });
+
+/**
+ * A filename reduced to something safe to put in a storage path.
+ *
+ * Anything with a slash, a backslash or a leading dot can climb out of the
+ * folder the storage policy is written against — and that policy is the only
+ * thing standing between one candidate's passport and another's. Everything
+ * outside a conservative allowlist becomes a hyphen, which occasionally makes
+ * for an ugly filename and never for a path traversal.
+ */
+export function safeFileName(name: string): string {
+  const cleaned = name
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^\.+/, '')
+    .slice(0, 120);
+  return cleaned.length > 0 ? cleaned : 'upload';
+}
+
+/**
+ * Where a candidate's document lives in storage.
+ *
+ * Computed from ids the server already holds, never taken from the client. The
+ * browser sends a filename; if it also chose the folder, a candidate could
+ * write into somebody else's — and the storage policy matches on
+ * `(storage.foldername(name))[2]` being their own candidate id, so the path IS
+ * the authorization.
+ *
+ * The document id is in the path so re-uploading the same filename for a
+ * different document does not collide.
+ */
+export function documentStoragePath(
+  candidate: CandidateId,
+  document: DocumentId,
+  fileName: string,
+  side: 'front' | 'back' = 'front',
+): string {
+  const name = safeFileName(fileName);
+  return `candidates/${candidate}/${document}/${side === 'back' ? 'back-' : ''}${name}`;
+}
 
 export const confirmFieldsInput = z.object({
   documentId,

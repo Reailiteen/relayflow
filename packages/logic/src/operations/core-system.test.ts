@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fixedClock } from '@relayflow/core';
+import { AGREEMENT_TITLES } from '@relayflow/entities';
 import { createFixtureRepositories, createStore, DEV_ACTORS, ids } from '@relayflow/fixtures';
 import { silentLogger } from '@relayflow/logger';
 import type { UseCaseContext } from '../context';
@@ -9,7 +10,6 @@ import {
   getCycleWorkspace,
   publishAllocations,
   runPrioritization,
-  signPlacementAgreement,
   transitionPosition,
 } from './core-system';
 
@@ -215,42 +215,15 @@ describe('cycle-scoped core system flows', () => {
     ]);
   });
 
-  it('lets the candidate sign their own agreement and no one else sign it for them', async () => {
-    const store = createStore();
-    const placement = store.placements[0]!;
-    const sign = (actor: UseCaseContext['actor'], kind: 'candidate_agreement' | 'startup_agreement') =>
-      signPlacementAgreement(context(actor, store), {
-        cycleId: placement.cycleId,
-        placementId: placement.id,
-        kind,
-        signerName: 'Layla Ahmed',
-        declarationAccepted: true,
-        documentOpenedAt: '2026-08-01T08:55:00.000Z',
-      });
-
-    const signed = await sign(DEV_ACTORS.candidate(), 'candidate_agreement');
-    expect(signed.ok && signed.data.kind).toBe('candidate_agreement');
-    expect(signed.ok && signed.data.signerId).toBe(ids.candidateUser);
-
-    // Nobody signs on the candidate's behalf, and the candidate does not sign
-    // the startup's line. Both read as not_found rather than forbidden: the
-    // placement is simply not theirs to act on in that capacity.
-    for (const [actor, kind] of [
-      [DEV_ACTORS.manager(), 'candidate_agreement'],
-      [DEV_ACTORS.startupOwner(), 'candidate_agreement'],
-      [DEV_ACTORS.candidate(), 'startup_agreement'],
-    ] as const) {
-      const refused = await sign(actor, kind);
-      expect(refused.ok).toBe(false);
-      if (!refused.ok) expect(refused.error.code).toBe('not_found');
-    }
-  });
-
-  it('holds Ready to Start on the candidate signature alone', async () => {
+  it('holds Ready to Start until the candidate returns their own signed agreement', async () => {
     const store = createStore();
     const placement = store.placements[0]!;
     const ctx = context(DEV_ACTORS.manager(), store);
-    for (const requirement of store.placementRequirements.filter((row) => row.status !== 'approved')) {
+    const agreements = Object.values(AGREEMENT_TITLES);
+
+    for (const requirement of store.placementRequirements.filter(
+      (row) => row.status !== 'approved' && !agreements.includes(row.title),
+    )) {
       await ctx.repos.requirements.decide({
         requirementId: requirement.id,
         decision: 'approved',
@@ -266,37 +239,45 @@ describe('cycle-scoped core system flows', () => {
         occurredAt: '2026-08-01T09:00:00.000Z',
       });
     }
-    for (const [actor, kind] of [
-      [DEV_ACTORS.manager(), 'qstp_agreement'],
-      [DEV_ACTORS.startupOwner(), 'startup_agreement'],
-    ] as const) {
-      const done = await signPlacementAgreement(context(actor, store), {
-        cycleId: placement.cycleId,
-        placementId: placement.id,
-        kind,
-        signerName: 'Signer',
-        declarationAccepted: true,
-        documentOpenedAt: '2026-08-01T08:55:00.000Z',
+
+    // Signing is a round trip now: download the agreement, sign it on paper,
+    // upload the signed copy, and the counterparty approves it. What ends up on
+    // file is a countersigned document rather than a record that somebody
+    // ticked a box.
+    const returnAgreement = async (title: string) => {
+      const requirement = store.placementRequirements.find((row) => row.title === title)!;
+      await ctx.repos.requirements.submit({
+        requirementId: requirement.id,
+        fileName: 'signed.pdf',
+        submittedBy: ids.qstpOps,
+        extractedFields: [],
+        occurredAt: '2026-08-01T09:05:00.000Z',
       });
-      if (!done.ok) throw done.error;
-    }
+      await ctx.repos.requirements.decide({
+        requirementId: requirement.id,
+        decision: 'approved',
+        reason: null,
+        occurredAt: '2026-08-01T09:06:00.000Z',
+      });
+    };
+
+    await returnAgreement(AGREEMENT_TITLES.qstp);
+    await returnAgreement(AGREEMENT_TITLES.startup);
 
     const blockedOn = async () => {
       const view = await getCycleWorkspace(ctx, { cycleId: placement.cycleId });
       if (!view.ok) throw view.error;
-      return view.data.placementReadiness.find((row) => row.placementId === placement.id)?.blockers ?? [];
+      return (
+        view.data.placementReadiness.find((row) => row.placementId === placement.id)?.blockers ?? []
+      );
     };
-    expect(await blockedOn()).toEqual(['Candidate agreement is unsigned.']);
 
-    const candidateSigned = await signPlacementAgreement(context(DEV_ACTORS.candidate(), store), {
-      cycleId: placement.cycleId,
-      placementId: placement.id,
-      kind: 'candidate_agreement',
-      signerName: 'Layla Ahmed',
-      declarationAccepted: true,
-      documentOpenedAt: '2026-08-01T08:55:00.000Z',
-    });
-    if (!candidateSigned.ok) throw candidateSigned.error;
+    // Two of three. Confirming readiness is not agreeing to the terms, so the
+    // candidate's own agreement alone holds the placement back — and the
+    // blocker names which one rather than saying "a document is incomplete".
+    expect(await blockedOn()).toEqual(['Candidate agreement is not signed and returned.']);
+
+    await returnAgreement(AGREEMENT_TITLES.candidate);
     expect(await blockedOn()).toEqual([]);
   });
 });

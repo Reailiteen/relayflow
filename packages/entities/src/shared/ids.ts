@@ -39,6 +39,7 @@ export type PlacementRequirementId = Uuid<'PlacementRequirementId'>;
 export type SubmissionId = Uuid<'SubmissionId'>;
 export type SignatureId = Uuid<'SignatureId'>;
 export type FallbackCaseId = Uuid<'FallbackCaseId'>;
+export type NotificationId = Uuid<'NotificationId'>;
 
 const uuid = z.uuid();
 
@@ -71,3 +72,4 @@ export const placementRequirementId = uuid.transform((v) => v as PlacementRequir
 export const submissionId = uuid.transform((v) => v as SubmissionId);
 export const signatureId = uuid.transform((v) => v as SignatureId);
 export const fallbackCaseId = uuid.transform((v) => v as FallbackCaseId);
+export const notificationId = uuid.transform((v) => v as NotificationId);

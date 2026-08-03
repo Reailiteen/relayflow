@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { isCandidate } from '@relayflow/access';
 import { getActor, getContext } from '@/server/context';
 import { AccountMenu } from '@/app/_components/account';
+import { NotificationBell } from '@/app/_components/notifications';
 import { TopBar, Workspace } from '@/app/_components/shell';
 import { CandidateNav } from './_components/nav';
 
@@ -47,7 +48,13 @@ export default async function CandidateLayout({ children }: { children: React.Re
 
         <CandidateNav cycleId={cycleId} />
 
-        <div className="ml-auto">
+        {/* A candidate gets the same bell as everyone else. They are the party
+            with the least context and the most at stake — a missed document
+            deadline costs them the placement — so "we told them" has to be
+            somewhere they can go back to, not only an email they may have
+            filed. */}
+        <div className="ml-auto flex items-center gap-3">
+          <NotificationBell centerHref="/candidate/notifications" />
           <AccountMenu name={actor.fullName} detail={actor.email} />
         </div>
       </TopBar>

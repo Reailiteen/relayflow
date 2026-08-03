@@ -1,7 +1,9 @@
 # Database
 
-Nothing in here runs yet. The apps are on in-memory fixtures; these files are
-the specification for when we wire a real project up.
+This is the live schema. The web app runs against it whenever
+`NEXT_PUBLIC_SUPABASE_URL` and a key are set, and falls back to in-memory
+fixtures when they are not — so a fresh clone still runs with no credentials,
+and the sign-in page says which mode it is in.
 
 ## No local stack
 
@@ -16,24 +18,24 @@ Every command talks to the hosted project over its connection string. That
 means one source of truth for the schema, and no class of "works locally,
 breaks on the project" bugs.
 
-## Setup, when the time comes
+## Setup
 
-1. Create the project in the Supabase dashboard.
-2. Copy the connection string from **Project Settings → Database → Connection
-   string → URI**, and put it in `.env` as `SUPABASE_DB_URL`.
-
-   It contains the database password, so it is server-only: never a
-   `NEXT_PUBLIC_`/`EXPO_PUBLIC_` variable, and never committed.
-
-3. Apply the migrations and generate types:
+1. Create the project in the Supabase dashboard, then `supabase link`.
+2. Apply the migrations and seed the demo cohort:
 
    ```bash
-   pnpm --filter @relayflow/data db:push          # apply supabase/migrations
-   pnpm --filter @relayflow/data generate:types   # refresh checked-in types
+   supabase db push
+   ./scripts/generate-types.sh                    # refresh the checked-in types
+   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… pnpm seed:hosted
    ```
 
-4. Point the apps at the project by replacing the two marked lines in
-   `apps/web/src/server/context.ts` and `apps/mobile/src/session.ts`.
+3. Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   in `apps/web/.env.local`. Nothing else needs changing — `context.ts` picks
+   the adapter from those two variables.
+
+Type generation reads the catalog off a throwaway cluster rather than the
+hosted project (`scripts/generate-types.sh`), so it needs neither Docker nor
+the database password. `supabase gen types` requires both.
 
 ## Migrations
 
@@ -55,6 +57,10 @@ describes what is actually deployed.
 | `0010_rpc.sql`                  | transactional functions for every multi-table write               |
 | `0011_reminder_engine.sql`      | reminder occurrences, channel fan-out, RLS and worker leases      |
 | `0012_candidate_agreement.sql`  | the candidate's own signature, and party-scoped signature RLS     |
+| `0013_app_writes.sql`           | the non-QSTP write surface: definer RPCs with explicit guards     |
+| `0014_storage.sql`              | document and submission buckets, and the policies over them       |
+| `0015_reminder_rules.sql`       | the rest of the rule catalogue, resolution and escalation         |
+| `0016_schedule.sql`             | pg_cron for the sweep; a helper to point it at the worker         |
 
 ## Reminder engine
 
@@ -79,34 +85,75 @@ The Edge worker lives in `supabase/functions/process-notifications`. It supports
 Resend email, Slack bot delivery and Expo push. It intentionally contains no
 credentials. WhatsApp is not part of RelayFlow.
 
-> **Hackathon exception:** the deployed worker is intentionally unauthenticated
-> and must use `--no-verify-jwt`. Anyone who discovers its URL can trigger a
-> queue drain. Restore caller authentication before loading real participant
-> data or treating the project as production.
+The worker still deploys with `--no-verify-jwt`, because its caller is pg_cron
+and there is no signed-in person to have a JWT. It is no longer unauthenticated:
+it requires an `x-worker-secret` header matching `WORKER_SHARED_SECRET` and
+returns 503 rather than running if that secret is unset. An unfinished
+deployment refuses to work instead of quietly working for everybody.
 
-Before enabling external delivery on a hosted project:
+### Enabling delivery on a hosted project
 
-1. Apply migrations and regenerate `packages/data/src/generated/database.types.ts`.
-2. Deploy the hackathon worker with JWT verification disabled:
+1. Apply migrations and regenerate the types:
+
+   ```bash
+   supabase db push
+   ./scripts/generate-types.sh
+   ```
+
+2. Set the secrets. Only the providers for channels actually being enabled —
+   an unset `SLACK_BOT_TOKEN` means Slack rows fail rather than silently
+   vanishing, which is the behaviour you want while deciding.
+
+   ```bash
+   supabase secrets set WORKER_SHARED_SECRET="$(openssl rand -hex 32)"
+   supabase secrets set NOTIFICATIONS_FROM=… APP_URL=…
+   supabase secrets set RESEND_API_KEY=…        # email
+   supabase secrets set SLACK_BOT_TOKEN=…       # slack
+   ```
+
+3. Deploy the worker:
 
    ```bash
    supabase functions deploy process-notifications --no-verify-jwt
    ```
 
-3. Configure `NOTIFICATIONS_FROM`, `APP_URL` and only the provider credentials
-   for channels being enabled. Do not expose any of them as public client
-   variables.
-4. Configure a hosted schedule to call
-   `enqueue_positions_not_submitted_reminders()` hourly and invoke the worker
-   every minute.
-5. Exercise a non-production recipient first, then verify the occurrence,
-   in-app record, external delivery row and retry state before widening the
-   audience.
+4. Point the scheduler at it, once, with the same secret. `0016_schedule.sql`
+   already schedules the hourly `run_reminder_sweep()`; this is the per-minute
+   drain, which needs a URL and a credential and therefore cannot live in a
+   migration:
 
-The application still needs its broader Supabase auth/repository cutover before
-the inbox can replace the fixture-derived bell. That cutover is separate from
-the reminder schema and must not be simulated by using a service-role client in
-the web application.
+   ```sql
+   select schedule_notification_worker(
+     'https://<project-ref>.supabase.co/functions/v1/process-notifications',
+     '<the same value as WORKER_SHARED_SECRET>'
+   );
+   ```
+
+5. Exercise a non-production recipient first, then check the occurrence, the
+   in-app record, the external delivery row and the retry state before widening
+   the audience.
+
+### Reminder rules
+
+`0015_reminder_rules.sql` completes the catalogue from
+[02A — Reminder engine](../docs/design/02-automation-rules.md): seven more
+evaluators, plus the two halves that were structurally missing —
+`resolve_reminder_occurrences` closes an episode when its condition clears, and
+`escalate_reminders` raises an unanswered one to QSTP after a per-rule delay,
+re-checking the condition first.
+
+Each rule's condition is written **once**, in `reminder_condition_holds`, and
+read by both the raising pass and the resolving pass. A condition written twice
+eventually disagrees with itself, and the failure is the one users notice: a
+reminder that cannot be silenced by doing what it asked for.
+
+To run a sweep by hand — useful when demonstrating, and the fastest way to see
+whether a rule fires at all:
+
+```sql
+select run_reminder_sweep();
+select run_reminder_sweep(now() + interval '30 days');  -- as if time had passed
+```
 
 ### The tenant is the startup
 

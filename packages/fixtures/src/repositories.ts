@@ -1,10 +1,13 @@
 import { conflict, err, notFound, ok, validation, type Result } from '@relayflow/core';
 import {
   blocksOthers,
+  byNewestFirst,
   canTransitionPosition,
+  countUnread,
   effectiveHours,
   isOpenOffer,
   placementReadinessBlockers,
+  AGREEMENT_TITLES,
   stageIndex,
   type ActivityEvent,
   type Allocation,
@@ -17,6 +20,9 @@ import {
   type ExceptionRequest,
   type ExtractedField,
   type Interview,
+  type Notification,
+  type NotificationCategory,
+  type NotificationChannel,
   type Placement,
   type PlacementRequirement,
   type PlacementSignature,
@@ -28,6 +34,7 @@ import {
   type StartupRating,
   type RecoveryCase,
   type RedistributionRound,
+  type ReminderRuleConfiguration,
   type RequirementSubmission,
   type Selection,
   type SelectionConflict,
@@ -35,6 +42,7 @@ import {
   type StartupMember,
   type TaskAssignment,
   type TaskTemplate,
+  type UserId,
 } from '@relayflow/entities';
 import type {
   AllocationPort,
@@ -43,6 +51,9 @@ import type {
   DocumentPort,
   ExceptionPort,
   InterviewPort,
+  NotificationPort,
+  NotificationPreferencePort,
+  ReminderRulePort,
   PoolEntryWithCandidate,
   PositionPort,
   Repositories,
@@ -103,6 +114,15 @@ export interface FixtureStore {
   recoveryCases: RecoveryCase[];
   redistributionRounds: RedistributionRound[];
   fallbackCases: CandidateChoiceFallback[];
+  notifications: Notification[];
+  reminderRules: ReminderRuleConfiguration[];
+  notificationPreferences: {
+    userId: UserId;
+    category: NotificationCategory;
+    channel: NotificationChannel;
+    enabled: boolean;
+  }[];
+  pushTokens: { userId: UserId; token: string; platform: string }[];
 }
 
 /** A fresh copy of the seed. Cloned so callers mutate their own state only. */
@@ -222,6 +242,23 @@ export function createStore(): FixtureStore {
       createdAt: '2026-02-20T08:00:00.000Z',
       updatedAt: '2026-02-20T08:00:00.000Z',
     },
+    // The three agreements, one per party. Ordinary requirements since 0017:
+    // QSTP issues one, each party signs it on paper and uploads the signed copy
+    // back, and the resulting PDF is the artefact a dispute needs — which a
+    // declaration checkbox never was.
+    ...(Object.entries(AGREEMENT_TITLES) as [DocumentRequirementTemplate['owner'], string][]).map(
+      ([owner, title], index) => ({
+        id: `d0c0a000-0000-4000-8000-${String(index + 4).padStart(12, '0')}` as DocumentRequirementTemplate['id'],
+        cycleId: seed.cycle.id,
+        title,
+        owner,
+        required: true,
+        positionId: null,
+        active: true,
+        createdAt: '2026-02-01T08:00:00.000Z',
+        updatedAt: '2026-02-01T08:00:00.000Z',
+      }),
+    ),
   ];
   const placementRequirements: PlacementRequirement[] = templates.map((template, index) => ({
     id: `d0c0b000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` as PlacementRequirement['id'],
@@ -230,6 +267,8 @@ export function createStore(): FixtureStore {
     title: template.title,
     owner: template.owner,
     required: template.required,
+    // One approved, one mid-review, everything else outstanding — including all
+    // three agreements, so the readiness panel has something to block on.
     status: index === 0 ? 'approved' : index === 1 ? 'under_review' : 'awaiting_upload',
     amendmentReason: null,
     createdAt: placement.createdAt,
@@ -375,6 +414,13 @@ export function createStore(): FixtureStore {
     recoveryCases,
     redistributionRounds: [],
     fallbackCases: [],
+    notifications: clone(seed.notifications),
+    // Empty on purpose: no stored configuration means every rule is running on
+    // its code-owned defaults, which is the state a fresh programme is in and
+    // the state the settings screen has to render legibly.
+    reminderRules: [],
+    notificationPreferences: [],
+    pushTokens: [],
   };
 }
 
@@ -1328,25 +1374,76 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     listAwaitingVerification: () =>
       Promise.resolve(ok(store.documents.filter((d) => d.status === 'submitted'))),
 
+    /**
+     * There is no storage here, so there is nothing to sign a URL for.
+     *
+     * `no-storage` rather than a plausible-looking token: the caller has to
+     * branch on it, and a token would have sent the browser off to POST bytes
+     * at a URL that does not exist.
+     */
+    prepareUpload: (input) =>
+      Promise.resolve(ok({ kind: 'no-storage' as const, path: input.path })),
+
+    createDownloadUrl: (input) =>
+      Promise.resolve(ok(`fixture://${input.bucket}/${input.path}`)),
+
     upload: (input) => {
       const document = store.documents.find((d) => d.id === input.documentId);
       if (!document) return Promise.resolve(err(notFound('Document not found.')));
+      if (document.status === 'verified') {
+        return Promise.resolve(err(conflict('That document has already been verified.')));
+      }
 
-      // Stand-in for OCR. The shapes are what a real extractor returns —
-      // including a deliberately low-confidence IBAN, because that is the field
-      // whose mis-read costs someone their salary and the UI has to handle it.
-      const extracted = SIMULATED_EXTRACTION[document.kind] ?? [];
+      // Matches the Supabase adapter: the upload parks the document and
+      // extraction finishes it. Kinds with no extractor go straight to
+      // `submitted`, which is why this is not simply always `extracting`.
+      const extracts = ['national_id', 'passport', 'bank_statement'].includes(document.kind);
 
       return Promise.resolve(
         ok(
           replaceDocument({
             ...document,
-            status: extracted.length > 0 ? 'awaiting_candidate_review' : 'submitted',
+            status: extracts ? 'extracting' : 'submitted',
             fileName: input.fileName,
-            storagePath: `candidates/${document.candidateId}/${input.fileName}`,
-            fields: extracted,
+            storagePath: input.storagePath,
+            fields: [],
             rejectionReason: null,
             updatedAt: input.uploadedAt,
+          }),
+        ),
+      );
+    },
+
+    /**
+     * Stand-in for the extractor.
+     *
+     * The caller passes real fields when there is a real extractor behind it —
+     * PaddleOCR for a bank statement — and passes none when running the demo,
+     * in which case `SIMULATED_EXTRACTION` fills in. The confidences there are
+     * chosen to exercise the review screen rather than to flatter it: the IBAN
+     * comes back at 0.58, which is exactly the case that screen exists for.
+     */
+    recordExtraction: (input) => {
+      const document = store.documents.find((d) => d.id === input.documentId);
+      if (!document) return Promise.resolve(err(notFound('Document not found.')));
+
+      if (input.failed) {
+        return Promise.resolve(
+          ok(replaceDocument({ ...document, status: 'uploaded', fields: [] })),
+        );
+      }
+
+      const fields: ExtractedField[] =
+        input.fields.length > 0
+          ? input.fields.map((field) => ({ ...field, confirmed: null }))
+          : (SIMULATED_EXTRACTION[document.kind] ?? []);
+
+      return Promise.resolve(
+        ok(
+          replaceDocument({
+            ...document,
+            status: fields.length > 0 ? 'awaiting_candidate_review' : 'submitted',
+            fields,
           }),
         ),
       );
@@ -2076,7 +2173,6 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
       const blockers = placementReadinessBlockers({
         active: placement.status === 'confirmed',
         requirements: store.placementRequirements.filter((row) => row.placementId === placement.id),
-        signatures: store.signatures.filter((row) => row.placementId === placement.id),
         candidateReady: placement.candidateReadyAt !== null,
         startupReady: placement.startupReadyAt !== null,
         detailsFinal: placement.detailsFinalizedAt !== null,
@@ -2488,6 +2584,129 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     },
   };
 
+  /**
+   * The in-app inbox.
+   *
+   * Every operation filters on `recipientId` first, including the ones that
+   * already have an id in hand: `markRead` on someone else's notification is a
+   * `notFound`, not a silent write. On Supabase that boundary is RLS; here it
+   * has to be code, and it has to be the same boundary or the fixtures are
+   * quietly more permissive than production.
+   */
+  const notifications: NotificationPort = {
+    listForRecipient: (recipientId, options) => {
+      const rows = store.notifications
+        .filter((row) => row.recipientId === recipientId)
+        .filter((row) => !options?.unreadOnly || row.readAt === null)
+        .sort(byNewestFirst);
+      const limit = options?.limit;
+      return Promise.resolve(ok(limit === undefined ? rows : rows.slice(0, limit)));
+    },
+
+    countUnread: (recipientId) =>
+      Promise.resolve(
+        ok(countUnread(store.notifications.filter((row) => row.recipientId === recipientId))),
+      ),
+
+    markRead: (id, recipientId, readAt) => {
+      const existing = store.notifications.find(
+        (row) => row.id === id && row.recipientId === recipientId,
+      );
+      if (!existing) return Promise.resolve(err(notFound('Notification not found.')));
+      // Already read keeps its original timestamp: the column records when they
+      // first saw it, and a second click is not a second first time.
+      if (existing.readAt !== null) return Promise.resolve(ok(existing));
+      const next: Notification = { ...existing, readAt };
+      store.notifications[store.notifications.indexOf(existing)] = next;
+      return Promise.resolve(ok(next));
+    },
+
+    markAllRead: (recipientId, readAt) => {
+      let changed = 0;
+      store.notifications = store.notifications.map((row) => {
+        if (row.recipientId !== recipientId || row.readAt !== null) return row;
+        changed += 1;
+        return { ...row, readAt };
+      });
+      return Promise.resolve(ok(changed));
+    },
+  };
+
+  /**
+   * Reminder configuration and preferences, in memory.
+   *
+   * Nothing evaluates a rule on fixtures — the evaluators are SQL, sweeping
+   * tables this store does not have — so these hold settings that no reminder
+   * reads. That is deliberate rather than a gap: the settings screens are the
+   * thing being exercised here, and a screen that saves and reloads correctly
+   * is what the fixture path is for.
+   */
+  const reminderRules: ReminderRulePort = {
+    listConfigurations: (cycleId) =>
+      Promise.resolve(
+        ok(
+          store.reminderRules.filter(
+            (row) => row.cycleId === null || row.cycleId === cycleId,
+          ),
+        ),
+      ),
+
+    saveConfiguration: (input) => {
+      const next: ReminderRuleConfiguration = {
+        ruleKey: input.ruleKey,
+        cycleId: input.cycleId,
+        enabled: input.enabled,
+        scheduleOffsetHours: input.scheduleOffsetHours,
+        // Forced, exactly as the database CHECK forces it. In-app is the record.
+        requiredChannels: ['in_app'],
+        preferredChannels: input.preferredChannels,
+        mandatory: input.mandatory,
+        urgent: input.urgent,
+        escalationAfterHours: input.escalationAfterHours,
+        updatedBy: input.updatedBy,
+        updatedAt: input.occurredAt,
+      };
+      const index = store.reminderRules.findIndex(
+        (row) => row.ruleKey === input.ruleKey && row.cycleId === input.cycleId,
+      );
+      if (index >= 0) store.reminderRules[index] = next;
+      else store.reminderRules.push(next);
+      return Promise.resolve(ok(next));
+    },
+  };
+
+  const notificationPreferences: NotificationPreferencePort = {
+    listForUser: (userId) =>
+      Promise.resolve(ok(store.notificationPreferences.filter((row) => row.userId === userId))),
+
+    savePreference: (userId, input) => {
+      const next = { userId, ...input };
+      const index = store.notificationPreferences.findIndex(
+        (row) =>
+          row.userId === userId &&
+          row.category === input.category &&
+          row.channel === input.channel,
+      );
+      if (index >= 0) store.notificationPreferences[index] = next;
+      else store.notificationPreferences.push(next);
+      return Promise.resolve(ok({ category: next.category, channel: next.channel, enabled: next.enabled }));
+    },
+
+    registerPushToken: (userId, token, platform) => {
+      if (!store.pushTokens.some((row) => row.token === token)) {
+        store.pushTokens.push({ userId, token, platform });
+      }
+      return Promise.resolve(ok(undefined));
+    },
+
+    removePushToken: (userId, token) => {
+      store.pushTokens = store.pushTokens.filter(
+        (row) => !(row.userId === userId && row.token === token),
+      );
+      return Promise.resolve(ok(undefined));
+    },
+  };
+
   return {
     cycles,
     startups,
@@ -2509,6 +2728,9 @@ export function createFixtureRepositories(store: FixtureStore = createStore()): 
     recovery,
     conflicts,
     fallbacks,
+    notifications,
+    reminderRules,
+    notificationPreferences,
   };
 }
 

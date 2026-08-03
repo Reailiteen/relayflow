@@ -5,7 +5,12 @@ import { silentLogger } from '@relayflow/logger';
 import type { CandidateActor } from '@relayflow/access';
 import type { UseCaseContext } from '../context';
 import { verifyDocument } from '../qstp/decisions';
-import { confirmAvailability, confirmDocumentFields, uploadDocument } from './actions';
+import {
+  confirmAvailability,
+  confirmDocumentFields,
+  recordDocumentExtraction,
+  uploadDocument,
+} from './actions';
 import { getCandidateDocuments, getCandidateOverview } from './views';
 
 /**
@@ -129,7 +134,7 @@ describe('candidate portal', () => {
   });
 
   describe('documents', () => {
-    it('extracts fields on upload and asks the candidate to check them', async () => {
+    it('parks the document while extraction runs, then asks the candidate to check it', async () => {
       const store = createStore();
       const ctx = contextFor(DEV_ACTORS.candidate(), store);
 
@@ -138,7 +143,6 @@ describe('candidate portal', () => {
       expect(nda?.status).toBe('requested');
       expect(bank).toBeDefined();
 
-      // Re-upload the bank statement to exercise extraction.
       const uploaded = await uploadDocument(ctx, {
         documentId: bank?.id,
         fileName: 'statement.pdf',
@@ -146,9 +150,19 @@ describe('candidate portal', () => {
       expect(uploaded.ok).toBe(true);
       if (!uploaded.ok) return;
 
-      expect(uploaded.data.status).toBe('awaiting_candidate_review');
+      // Extraction is a real pass over a real file now, so it has not happened
+      // yet. A stalled one has to be visible as itself rather than looking like
+      // a document nobody has got to.
+      expect(uploaded.data.status).toBe('extracting');
+      expect(uploaded.data.fields).toHaveLength(0);
+
+      const extracted = await recordDocumentExtraction(ctx, { documentId: bank?.id });
+      expect(extracted.ok).toBe(true);
+      if (!extracted.ok) return;
+
+      expect(extracted.data.status).toBe('awaiting_candidate_review');
       // Nothing is confirmed yet — that is the candidate's job.
-      expect(uploaded.data.fields.every((field) => field.confirmed === null)).toBe(true);
+      expect(extracted.data.fields.every((field) => field.confirmed === null)).toBe(true);
 
       const views = await getCandidateDocuments(ctx, {});
       expect(views.ok).toBe(true);
@@ -159,12 +173,30 @@ describe('candidate portal', () => {
       expect(view?.needsAction).toBe(true);
     });
 
+    it('sends a failed extraction back to the candidate rather than stalling', async () => {
+      const store = createStore();
+      const ctx = contextFor(DEV_ACTORS.candidate(), store);
+      const bank = store.documents.find((d) => d.kind === 'bank_statement');
+
+      await uploadDocument(ctx, { documentId: bank?.id, fileName: 'statement.pdf' });
+      const failed = await recordDocumentExtraction(ctx, {
+        documentId: bank?.id,
+        failed: true,
+      });
+
+      expect(failed.ok).toBe(true);
+      if (!failed.ok) return;
+      expect(failed.data.status).toBe('uploaded');
+      expect(failed.data.fields).toHaveLength(0);
+    });
+
     it('refuses a partial confirmation and names what is missing', async () => {
       const store = createStore();
       const ctx = contextFor(DEV_ACTORS.candidate(), store);
       const bank = store.documents.find((d) => d.kind === 'bank_statement');
 
       await uploadDocument(ctx, { documentId: bank?.id, fileName: 'statement.pdf' });
+      await recordDocumentExtraction(ctx, { documentId: bank?.id });
 
       const result = await confirmDocumentFields(ctx, {
         documentId: bank?.id,
@@ -183,10 +215,8 @@ describe('candidate portal', () => {
       const ctx = contextFor(DEV_ACTORS.candidate(), store);
       const bank = store.documents.find((d) => d.kind === 'bank_statement');
 
-      const uploaded = await uploadDocument(ctx, {
-        documentId: bank?.id,
-        fileName: 'statement.pdf',
-      });
+      await uploadDocument(ctx, { documentId: bank?.id, fileName: 'statement.pdf' });
+      const uploaded = await recordDocumentExtraction(ctx, { documentId: bank?.id });
       if (!uploaded.ok) return;
       const misread = uploaded.data.fields.find((f) => f.key === 'iban')?.extracted;
 

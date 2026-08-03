@@ -33,6 +33,12 @@ set stage = 'positions',
     )
 where id = 'cccccccc-0000-0000-0000-000000000001';
 
+-- A new psql connection, so the JWT claim test 01 set is gone and `auth.uid()`
+-- is null again. `decide_allocation` is QSTP-guarded since 0013, so seeding
+-- through it means acting as the programme manager rather than as nobody.
+select set_config(
+  'request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', false);
+
 select decide_allocation(
   'cccccccc-0000-0000-0000-000000000001',
   'aaaaaaaa-0000-0000-0000-000000000003',
@@ -256,7 +262,16 @@ begin
   if (select count(*) from reminder_occurrences) < 1 then
     raise exception 'FAIL: QSTP cannot inspect reminder occurrences';
   end if;
-  if (select count(*) from notifications) <> 7 then
+
+  -- Scoped to this rule rather than counting the whole table. 0015 added an
+  -- AFTER INSERT trigger on `selection_conflicts`, and test 01 creates one — so
+  -- a global count here would measure the conflict rule as well and change
+  -- every time the catalogue grows.
+  if (
+    select count(*) from notifications n
+    join reminder_occurrences o on o.id = n.occurrence_id
+    where o.rule_key = 'positions-not-submitted'
+  ) <> 7 then
     raise exception 'FAIL: QSTP cannot inspect all channel audit rows';
   end if;
   raise notice 'PASS  QSTP can inspect occurrences and every channel audit row';

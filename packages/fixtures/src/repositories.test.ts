@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AGREEMENT_TITLES } from '@relayflow/entities';
 import { createFixtureRepositories, createScenarioStore, createStore, ids } from '.';
 
 describe('fixture repository contracts', () => {
@@ -316,13 +317,19 @@ describe('fixture repository contracts', () => {
     expect(store.placements).toHaveLength(1);
   });
 
-  it('allows Ready to Start only after the complete checklist, signatures, and four confirmations', async () => {
+  it('allows Ready to Start only after every agreement is returned signed and four confirmations', async () => {
     const store = createStore();
     const repos = createFixtureRepositories(store);
     const placement = store.placements[0]!;
     const blocked = await repos.placements.markReady(placement.id, '2026-03-18T09:00:00.000Z');
     expect(blocked.ok).toBe(false);
-    for (const requirement of store.placementRequirements.filter((row) => row.status !== 'approved')) {
+
+    const agreements = Object.values(AGREEMENT_TITLES);
+
+    // Everything that is not an agreement: approved or explicitly waived.
+    for (const requirement of store.placementRequirements.filter(
+      (row) => row.status !== 'approved' && !agreements.includes(row.title),
+    )) {
       const decided = await repos.requirements.decide({
         requirementId: requirement.id,
         decision: requirement.owner === 'startup' ? 'waived' : 'approved',
@@ -331,37 +338,45 @@ describe('fixture repository contracts', () => {
       });
       expect(decided.ok).toBe(true);
     }
-    await repos.requirements.sign({
-      placementId: placement.id,
-      kind: 'qstp_agreement',
-      signerId: ids.qstpOps,
-      signerName: 'Faisal Al-Marri',
-      declarationAccepted: true,
-      documentOpenedAt: '2026-03-18T10:30:00.000Z',
-      signedAt: '2026-03-18T10:31:00.000Z',
-    });
-    await repos.requirements.sign({
-      placementId: placement.id,
-      kind: 'startup_agreement',
-      signerId: ids.acmeOwner,
-      signerName: 'Dana Habib',
-      declarationAccepted: true,
-      documentOpenedAt: '2026-03-18T10:40:00.000Z',
-      signedAt: '2026-03-18T10:41:00.000Z',
-    });
-    // Two of three. The candidate's own signature is still outstanding, and that
-    // alone must hold the placement back.
+
+    // The agreements themselves: download, sign on paper, upload the signed
+    // copy, and the counterparty approves it. The artefact is the point — a
+    // countersigned PDF with a revision history, rather than a click.
+    const returnAgreement = async (title: string, at: string) => {
+      const requirement = store.placementRequirements.find((row) => row.title === title)!;
+      const submitted = await repos.requirements.submit({
+        requirementId: requirement.id,
+        fileName: `${title.toLowerCase().replaceAll(' ', '-')}-signed.pdf`,
+        submittedBy: ids.qstpOps,
+        extractedFields: [],
+        occurredAt: at,
+      });
+      expect(submitted.ok).toBe(true);
+      // Revision 1 is the signed copy coming back. A correction would be
+      // revision 2, and both survive.
+      expect(submitted.ok && submitted.data.revision).toBe(1);
+      return repos.requirements.decide({
+        requirementId: requirement.id,
+        decision: 'approved',
+        reason: null,
+        occurredAt: at,
+      });
+    };
+
+    await returnAgreement(AGREEMENT_TITLES.qstp, '2026-03-18T10:31:00.000Z');
+    await returnAgreement(AGREEMENT_TITLES.startup, '2026-03-18T10:41:00.000Z');
+
+    // Two of three. The candidate's own agreement is still outstanding, and
+    // that alone must hold the placement back — confirming readiness is not
+    // agreeing to the terms.
     const twoOfThree = await repos.placements.markReady(placement.id, '2026-03-18T10:45:00.000Z');
     expect(twoOfThree.ok).toBe(false);
-    await repos.requirements.sign({
-      placementId: placement.id,
-      kind: 'candidate_agreement',
-      signerId: ids.candidateUser,
-      signerName: 'Layla Ahmed',
-      declarationAccepted: true,
-      documentOpenedAt: '2026-03-18T10:50:00.000Z',
-      signedAt: '2026-03-18T10:51:00.000Z',
-    });
+    if (!twoOfThree.ok) {
+      expect(twoOfThree.error.message).toContain('Candidate agreement');
+    }
+
+    await returnAgreement(AGREEMENT_TITLES.candidate, '2026-03-18T10:51:00.000Z');
+
     await repos.placements.setReadiness({
       placementId: placement.id,
       party: 'startup',

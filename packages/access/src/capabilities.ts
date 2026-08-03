@@ -86,6 +86,11 @@ export const CAPABILITIES = [
   'placement:confirm_startup',
   'placement:finalize_details',
 
+  // Reminder rules are code-owned; these gate the safe knobs on them —
+  // timing, reach, channel policy — never the predicates themselves.
+  'reminder:read',
+  'reminder:configure',
+
   'report:read',
 ] as const;
 
@@ -127,6 +132,8 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'document:verify',
     'onboarding:complete',
     'placement:finalize_details',
+    'reminder:read',
+    'reminder:configure',
     'report:read',
   ],
   operations: [
@@ -152,9 +159,11 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'document:verify',
     'onboarding:complete',
     'placement:finalize_details',
+    'reminder:read',
     'report:read',
-    // Deliberately absent: cycle setup, allocation overrides, redistribution.
-    // Those reshape the programme's budget and stay with the manager.
+    // Deliberately absent: cycle setup, allocation overrides, redistribution,
+    // and reminder configuration. Those reshape the programme's budget or who
+    // the system speaks to on its behalf, and stay with the manager.
   ],
   viewer: [
     'cycle:read',
@@ -168,6 +177,7 @@ export const QSTP_CAPABILITIES: Readonly<Record<QstpRole, readonly Capability[]>
     'selection:read_all',
     'exception:read_all',
     'document:read_all',
+    'reminder:read',
     'report:read',
   ],
 };

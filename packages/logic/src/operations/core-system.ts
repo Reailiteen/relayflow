@@ -659,7 +659,6 @@ export const getCycleWorkspace = defineUseCase({
         blockers: placementReadinessBlockers({
           active: placement.status === 'confirmed',
           requirements: requirements.filter((row) => row.placementId === placement.id),
-          signatures: signatures.filter((row) => row.placementId === placement.id),
           candidateReady: placement.candidateReadyAt !== null,
           startupReady: placement.startupReadyAt !== null,
           detailsFinal: placement.detailsFinalizedAt !== null,
@@ -2158,66 +2157,6 @@ export const decideRequirement = defineUseCase({
       occurredAt,
     });
     return decided;
-  },
-});
-
-export const signPlacementAgreement = defineUseCase({
-  name: 'placement.signAgreement',
-  input: z.object({
-    cycleId,
-    placementId,
-    kind: z.enum(['qstp_agreement', 'startup_agreement', 'candidate_agreement']),
-    signerName: z.string().trim().min(1).max(200),
-    declarationAccepted: z.literal(true),
-    documentOpenedAt: z.iso.datetime({ offset: true }),
-  }),
-  authorize: AUTHENTICATED,
-  execute: async (ctx, input) => {
-    const actor = requireActor(ctx);
-    if (!actor.ok) return actor;
-    const placement = await ctx.repos.placements.findById(input.placementId);
-    if (!placement.ok) return placement;
-    if (!placement.data || placement.data.cycleId !== input.cycleId)
-      return err(notFound('Placement not found.'));
-    if (placement.data.status === 'cancelled') {
-      return err(conflict('Cancelled placements are read-only.'));
-    }
-    // Each party may sign only their own line, and only on a placement they are
-    // actually party to. A candidate signing `startup_agreement` is not an
-    // authorization error to be explained — it is a request about a placement
-    // they cannot see in that capacity, so it reads as not-found like the rest.
-    const allowed =
-      (input.kind === 'qstp_agreement' && isQstp(actor.data) && actor.data.role !== 'viewer') ||
-      (input.kind === 'startup_agreement' &&
-        isStartup(actor.data) &&
-        actor.data.affiliations.some(
-          (row) => row.startupId === placement.data?.startupId && row.status === 'active',
-        )) ||
-      (input.kind === 'candidate_agreement' &&
-        isCandidate(actor.data) &&
-        actor.data.candidateId === placement.data.candidateId);
-    if (!allowed) return err(notFound('Placement not found.'));
-    const now = ctx.clock.now().toISOString();
-    const signed = await ctx.repos.requirements.sign({
-      placementId: input.placementId,
-      kind: input.kind,
-      signerId: actor.data.userId,
-      signerName: input.signerName,
-      declarationAccepted: true,
-      documentOpenedAt: input.documentOpenedAt,
-      signedAt: now,
-    });
-    if (!signed.ok) return signed;
-    await event(ctx, {
-      cycleId: input.cycleId,
-      entityType: 'placement',
-      entityId: input.placementId,
-      action: 'agreement_signed',
-      before: null,
-      after: { kind: input.kind, signerName: input.signerName },
-      occurredAt: now,
-    });
-    return signed;
   },
 });
 

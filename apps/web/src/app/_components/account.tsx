@@ -1,50 +1,19 @@
-import { Bell, ChevronDown, LogOut } from 'lucide-react';
+import { ChevronDown, LogOut } from 'lucide-react';
 import { cn } from '@relayflow/ui-web';
 import { signOutAction } from '@/server/actions';
 
 /**
- * The right-hand end of the top bar: what needs looking at, and who you are.
+ * Who you are, at the right-hand end of the top bar.
  *
- * Both are server components, shared by all three portals. The account menu is
- * a `<details>` rather than a popover library because it has exactly one item —
- * signing out — and that item is a form post, so it works before any JavaScript
- * has loaded.
- */
-
-/**
- * Unread count for the bell.
+ * A server component shared by all three portals. The menu is a `<details>`
+ * rather than a popover library because it has exactly one item — signing out —
+ * and that item is a form post, so it works before any JavaScript has loaded.
  *
- * Whatever the portal's own definition of "needs you" is, it is the same number
- * the screen below shows — a badge that disagrees with the list two hundred
- * pixels beneath it is worse than no badge. Rendered only when there is
- * something to say, so a quiet portal gets a quiet bell.
+ * The bell that sits beside it is `NotificationBell` in `notifications.tsx`.
+ * It used to live here as a decorative button counting whatever the portal's
+ * dashboard thought was urgent; it now reads the inbox the reminder engine
+ * actually writes to.
  */
-export function Notifications({ count }: { count: number }) {
-  return (
-    <button
-      type="button"
-      aria-label={count > 0 ? `Notifications, ${count} urgent` : 'Notifications'}
-      className={cn(
-        'relative grid size-9 place-items-center rounded-control text-ink-2',
-        'transition-colors hover:bg-surface-hover hover:text-ink',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-      )}
-    >
-      <Bell className="size-[22px]" strokeWidth={1.75} aria-hidden="true" />
-      {count > 0 && (
-        <span
-          className={cn(
-            'absolute -top-0.5 -right-0.5 grid size-[18px] place-items-center rounded-full',
-            'bg-red text-[11px] leading-none font-bold text-white tabular-nums',
-          )}
-          aria-hidden="true"
-        >
-          {count > 9 ? '9+' : count}
-        </span>
-      )}
-    </button>
-  );
-}
 
 export interface AccountMenuProps {
   name: string;
